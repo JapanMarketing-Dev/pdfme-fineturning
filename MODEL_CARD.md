@@ -161,37 +161,54 @@ print(result)
 
 ## Deployment (Inference Endpoints)
 
-### Recommended GPU
+### ⚠️ Important: Instance Selection
 
-| GPU | VRAM | Recommendation | Reason |
-|-----|------|----------------|--------|
-| **NVIDIA L4** | 24GB | ⭐⭐⭐ | Best cost-performance, works well with 4-bit |
-| **NVIDIA A10G** | 24GB | ⭐⭐⭐ | Stable, common on AWS |
-| **NVIDIA T4** | 16GB | ⭐⭐ | Cheap but tight, slower inference |
-| **NVIDIA A100** | 40GB+ | ⭐ | Overkill, expensive |
+This model is an **8B parameter** Vision-Language Model. Please note the following when deploying:
 
-**Recommendation: NVIDIA L4 × 1**
+| Condition | Recommended Instance | VRAM | Notes |
+|-----------|---------------------|------|-------|
+| **With 4-bit quantization** | `nvidia-l4` or `nvidia-a10g` | 24GB | ⭐ Recommended |
+| **Without 4-bit quantization** | `nvidia-a10g` or higher | 24GB+ | Requires more VRAM |
+
+**🎯 Recommended: `nvidia-l4` × 1 (with 4-bit quantization)**
+
+### Deployment Steps
+
+1. Go to [takumi123xxx/pdfme-form-field-detector-lora](https://huggingface.co/takumi123xxx/pdfme-form-field-detector-lora)
+2. Click **"Deploy" → "Inference Endpoints"**
+3. Configure settings:
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| **Cloud Provider** | `AWS` | Recommended |
+| **Region** | `us-east-1` or `eu-west-1` | L4 available regions |
+| **Instance Type** | ⭐ **`nvidia-l4`** | Best choice |
+| **Instance Size** | `x1` | 1 GPU |
+| **Min Replicas** | `0` | No charge when idle |
+| **Max Replicas** | `1` | Single instance |
+
+4. In **Advanced Configuration**, set **Task** to `custom`
+5. Click **"Create Endpoint"**
 
 ### Cost Estimate (2025)
 
-| GPU | Per Hour | Monthly (24/7) |
-|-----|----------|----------------|
-| T4 | ~$0.50 | ~$360 |
-| L4 | ~$0.80 | ~$576 |
-| A10G | ~$1.10 | ~$792 |
+| GPU | Per Hour | Monthly (24/7) | Monthly (2h/day) |
+|-----|----------|----------------|------------------|
+| L4 | ~$0.80 | ~$576 | ~$48 |
+| A10G | ~$1.10 | ~$792 | ~$66 |
+| T4 | ~$0.50 | ~$360 | ❌ May run out of VRAM |
 
-💡 Set **Min Replicas = 0** to avoid charges when idle (30s-1min cold start)
+💡 **Min Replicas = 0**: No charge when idle
+⚠️ Cold start takes **1-3 minutes** (model loading time)
 
-### Deployment Settings
+### Troubleshooting
 
-| Setting | Recommended Value |
-|---------|-------------------|
-| **Cloud Provider** | AWS or GCP |
-| **Region** | `ap-northeast-1` (Tokyo) or nearest |
-| **Instance Type** | `GPU - L4` or `GPU - A10G` |
-| **Instance Size** | `x1` (1 GPU) |
-| **Min Replicas** | `0` (cost saving) |
-| **Max Replicas** | `1` |
+**Error: `PackageNotFoundError: bitsandbytes`**
+- The handler automatically falls back to bfloat16 if bitsandbytes is unavailable
+- Solution: Use `nvidia-l4` or `nvidia-a10g` instance
+
+**Error: CUDA out of memory**
+- Solution: Use larger instance (`nvidia-a10g` or higher) or ensure `USE_4BIT=true`
 
 ## Training Details
 
@@ -351,37 +368,54 @@ print(result)
 
 ## デプロイ（Inference Endpoints）
 
-### 推奨GPU
+### ⚠️ 重要：インスタンス選択について
 
-| GPU | VRAM | 推奨度 | 理由 |
-|-----|------|--------|------|
-| **NVIDIA L4** | 24GB | ⭐⭐⭐ | コスパ最高、4bit量子化で十分動作 |
-| **NVIDIA A10G** | 24GB | ⭐⭐⭐ | 安定、AWSで一般的 |
-| **NVIDIA T4** | 16GB | ⭐⭐ | 安いがギリギリ、推論速度遅め |
-| **NVIDIA A100** | 40GB+ | ⭐ | オーバースペック、高コスト |
+このモデルは**8Bパラメータ**のVision-Language Modelです。デプロイ時は以下の点に注意してください：
 
-**推奨: NVIDIA L4 × 1**
+| 条件 | 推奨インスタンス | VRAM | 備考 |
+|------|-----------------|------|------|
+| **4bit量子化あり** | `nvidia-l4` または `nvidia-a10g` | 24GB | ⭐推奨 |
+| **4bit量子化なし** | `nvidia-a10g` 以上 | 24GB+ | VRAMに余裕が必要 |
+
+**🎯 推奨構成: `nvidia-l4` × 1（4bit量子化）**
+
+### デプロイ手順
+
+1. [takumi123xxx/pdfme-form-field-detector-lora](https://huggingface.co/takumi123xxx/pdfme-form-field-detector-lora) にアクセス
+2. **「Deploy」→「Inference Endpoints」**を選択
+3. 設定：
+
+| 項目 | 設定値 | 説明 |
+|------|--------|------|
+| **Cloud Provider** | `AWS` | 推奨 |
+| **Region** | `us-east-1` または `eu-west-1` | L4利用可能地域 |
+| **Instance Type** | ⭐ **`nvidia-l4`** | 最も推奨 |
+| **Instance Size** | `x1` | 1GPU |
+| **Min Replicas** | `0` | 使わないときは課金なし |
+| **Max Replicas** | `1` | 単一インスタンス |
+
+4. **Advanced Configuration**で**Task**を`custom`に設定
+5. **「Create Endpoint」**をクリック
 
 ### コスト目安（2025年時点）
 
-| GPU | 1時間あたり | 月額（24時間稼働） |
-|-----|------------|-------------------|
-| T4 | ~$0.50 | ~$360 |
-| L4 | ~$0.80 | ~$576 |
-| A10G | ~$1.10 | ~$792 |
+| GPU | 1時間あたり | 月額（24時間） | 月額（1日2時間使用） |
+|-----|------------|---------------|---------------------|
+| L4 | ~$0.80 | ~$576 | ~$48 |
+| A10G | ~$1.10 | ~$792 | ~$66 |
+| T4 | ~$0.50 | ~$360 | ❌ VRAM不足の可能性 |
 
-💡 **Min Replicas = 0** に設定すると、使わないときは課金されません（Cold Start時に30秒〜1分かかる）
+💡 **Min Replicas = 0**: 使わないときは課金なし
+⚠️ Cold Startに**1-3分**かかります（モデルロード時間）
 
-### デプロイ設定
+### トラブルシューティング
 
-| 項目 | 推奨値 |
-|------|--------|
-| **Cloud Provider** | AWS または GCP |
-| **Region** | `ap-northeast-1`（東京）か近い地域 |
-| **Instance Type** | `GPU - L4` または `GPU - A10G` |
-| **Instance Size** | `x1`（1GPU） |
-| **Min Replicas** | `0`（コスト節約） |
-| **Max Replicas** | `1` |
+**エラー: `PackageNotFoundError: bitsandbytes`**
+- handler.pyは自動的にbfloat16にフォールバックします
+- 解決策: `nvidia-l4`または`nvidia-a10g`インスタンスを選択
+
+**エラー: CUDA out of memory**
+- 解決策: より大きなインスタンス（`nvidia-a10g`以上）を選択、または`USE_4BIT=true`を確認
 
 ## 学習詳細
 

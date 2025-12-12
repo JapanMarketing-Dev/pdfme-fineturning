@@ -184,45 +184,58 @@ pdfme-fineturning/
 
 ファインチューニング済みモデルをAPIとしてデプロイできます。
 
-### GPU選択ガイド
+### ⚠️ 重要：インスタンス選択について
 
-このモデル（Qwen3-VL-8B-Instruct + LoRA、4bit量子化）を動かす場合の推奨GPU：
+このモデルは**8Bパラメータ**のVision-Language Modelです。デプロイ時は以下の点に注意してください：
 
-| GPU | VRAM | 推奨度 | 理由 |
-|-----|------|--------|------|
-| **NVIDIA L4** | 24GB | ⭐⭐⭐ | コスパ最高、4bit量子化で十分動作 |
-| **NVIDIA A10G** | 24GB | ⭐⭐⭐ | 安定、AWSで一般的 |
-| **NVIDIA T4** | 16GB | ⭐⭐ | 安いがギリギリ、推論速度遅め |
-| **NVIDIA A100** | 40GB+ | ⭐ | オーバースペック、高コスト |
+| 条件 | 推奨インスタンス | VRAM | 備考 |
+|------|-----------------|------|------|
+| **4bit量子化あり** | `nvidia-l4` または `nvidia-a10g` | 24GB | ⭐推奨。コスパ最高 |
+| **4bit量子化なし** | `nvidia-a10g` 以上 | 24GB+ | VRAMに余裕が必要 |
 
-**推奨: NVIDIA L4 × 1**（コストパフォーマンスが最も良い）
+**🎯 推奨構成: `nvidia-l4` × 1（4bit量子化）**
+
+### デプロイ手順（詳細）
+
+1. **Hugging Face Hub**で [takumi123xxx/pdfme-form-field-detector-lora](https://huggingface.co/takumi123xxx/pdfme-form-field-detector-lora) にアクセス
+
+2. **「Deploy」→「Inference Endpoints」**を選択
+
+3. **基本設定**：
+
+| 項目 | 設定値 | 説明 |
+|------|--------|------|
+| **Cloud Provider** | `AWS` | AWSが安定 |
+| **Region** | `us-east-1` または `eu-west-1` | L4が利用可能な地域 |
+| **Instance Type** | ⭐ **`nvidia-l4`** | 最も推奨 |
+| **Instance Size** | `x1` | 1GPU |
+
+4. **スケーリング設定**：
+
+| 項目 | 設定値 | 説明 |
+|------|--------|------|
+| **Min Replicas** | `0` | 使わないときは課金なし |
+| **Max Replicas** | `1` | 同時1インスタンス |
+
+5. **Advanced Configuration**（重要）：
+
+| 項目 | 設定値 | 説明 |
+|------|--------|------|
+| **Task** | `custom` | カスタムハンドラー使用 |
+| **Container Type** | デフォルトのまま | 変更不要 |
+
+6. **「Create Endpoint」**をクリック
 
 ### コスト目安（2025年時点）
 
-| GPU | 1時間あたり | 月額（24時間稼働） |
-|-----|------------|-------------------|
-| T4 | ~$0.50 | ~$360 |
-| L4 | ~$0.80 | ~$576 |
-| A10G | ~$1.10 | ~$792 |
+| GPU | 1時間あたり | 月額（24時間） | 月額（Min=0、1日2時間使用） |
+|-----|------------|---------------|---------------------------|
+| L4 | ~$0.80 | ~$576 | ~$48 |
+| A10G | ~$1.10 | ~$792 | ~$66 |
+| T4 | ~$0.50 | ~$360 | ❌ VRAM不足の可能性 |
 
-💡 **Min Replicas = 0** に設定すると、使わないときは課金されません（Cold Start時に30秒〜1分かかる）
-
-### デプロイ手順
-
-1. Hugging Face Hubで [takumi123xxx/pdfme-form-field-detector-lora](https://huggingface.co/takumi123xxx/pdfme-form-field-detector-lora) にアクセス
-2. 「Deploy」→「Inference Endpoints」を選択
-3. 以下の設定を行う：
-
-| 項目 | 推奨値 |
-|------|--------|
-| **Cloud Provider** | AWS または GCP |
-| **Region** | `ap-northeast-1`（東京）か近い地域 |
-| **Instance Type** | `GPU - L4` または `GPU - A10G` |
-| **Instance Size** | `x1`（1GPU） |
-| **Min Replicas** | `0`（コスト節約、使用時のみ起動） |
-| **Max Replicas** | `1` |
-
-4. 「Create Endpoint」をクリックしてデプロイ
+💡 **Min Replicas = 0** に設定すると、使わないときは課金されません
+⚠️ Cold Start時に**1-3分**かかります（モデルロード時間）
 
 ### 環境変数（オプション）
 
@@ -230,7 +243,21 @@ pdfme-fineturning/
 |--------|------------|------|
 | `BASE_MODEL` | `Qwen/Qwen3-VL-8B-Instruct` | ベースモデル |
 | `USE_LORA` | `true` | LoRAアダプターを使用 |
-| `USE_4BIT` | `true` | 4bit量子化を使用 |
+| `USE_4BIT` | `true` | 4bit量子化を使用（推奨） |
+
+### トラブルシューティング
+
+#### エラー: `PackageNotFoundError: bitsandbytes`
+
+4bit量子化には`bitsandbytes`が必要です。handler.pyは自動的にフォールバックしますが、VRAMが足りない場合があります。
+
+**解決策**: `nvidia-l4`または`nvidia-a10g`インスタンスを選択してください。
+
+#### エラー: CUDA out of memory
+
+VRAMが不足しています。
+
+**解決策**: より大きなインスタンス（`nvidia-a10g`以上）を選択するか、`USE_4BIT=true`を確認してください。
 
 ## 技術的な補足
 
