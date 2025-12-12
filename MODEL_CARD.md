@@ -159,6 +159,40 @@ print(result)
 8. **Larger models** - Qwen3-VL-72B when PEFT compatible
 9. **Active learning** - Human review → feedback → continuous improvement
 
+## Deployment (Inference Endpoints)
+
+### Recommended GPU
+
+| GPU | VRAM | Recommendation | Reason |
+|-----|------|----------------|--------|
+| **NVIDIA L4** | 24GB | ⭐⭐⭐ | Best cost-performance, works well with 4-bit |
+| **NVIDIA A10G** | 24GB | ⭐⭐⭐ | Stable, common on AWS |
+| **NVIDIA T4** | 16GB | ⭐⭐ | Cheap but tight, slower inference |
+| **NVIDIA A100** | 40GB+ | ⭐ | Overkill, expensive |
+
+**Recommendation: NVIDIA L4 × 1**
+
+### Cost Estimate (2025)
+
+| GPU | Per Hour | Monthly (24/7) |
+|-----|----------|----------------|
+| T4 | ~$0.50 | ~$360 |
+| L4 | ~$0.80 | ~$576 |
+| A10G | ~$1.10 | ~$792 |
+
+💡 Set **Min Replicas = 0** to avoid charges when idle (30s-1min cold start)
+
+### Deployment Settings
+
+| Setting | Recommended Value |
+|---------|-------------------|
+| **Cloud Provider** | AWS or GCP |
+| **Region** | `ap-northeast-1` (Tokyo) or nearest |
+| **Instance Type** | `GPU - L4` or `GPU - A10G` |
+| **Instance Size** | `x1` (1 GPU) |
+| **Min Replicas** | `0` (cost saving) |
+| **Max Replicas** | `1` |
+
 ## Training Details
 
 - **Epochs**: 3
@@ -314,6 +348,40 @@ print(result)
 7. **大規模データセット構築** - 1000件以上のアノテーション済みデータ
 8. **より大きなモデル** - Qwen3-VL-72B等、PEFT対応後に試行
 9. **Active Learning** - 人間のレビュー→フィードバック→継続的改善
+
+## デプロイ（Inference Endpoints）
+
+### 推奨GPU
+
+| GPU | VRAM | 推奨度 | 理由 |
+|-----|------|--------|------|
+| **NVIDIA L4** | 24GB | ⭐⭐⭐ | コスパ最高、4bit量子化で十分動作 |
+| **NVIDIA A10G** | 24GB | ⭐⭐⭐ | 安定、AWSで一般的 |
+| **NVIDIA T4** | 16GB | ⭐⭐ | 安いがギリギリ、推論速度遅め |
+| **NVIDIA A100** | 40GB+ | ⭐ | オーバースペック、高コスト |
+
+**推奨: NVIDIA L4 × 1**
+
+### コスト目安（2025年時点）
+
+| GPU | 1時間あたり | 月額（24時間稼働） |
+|-----|------------|-------------------|
+| T4 | ~$0.50 | ~$360 |
+| L4 | ~$0.80 | ~$576 |
+| A10G | ~$1.10 | ~$792 |
+
+💡 **Min Replicas = 0** に設定すると、使わないときは課金されません（Cold Start時に30秒〜1分かかる）
+
+### デプロイ設定
+
+| 項目 | 推奨値 |
+|------|--------|
+| **Cloud Provider** | AWS または GCP |
+| **Region** | `ap-northeast-1`（東京）か近い地域 |
+| **Instance Type** | `GPU - L4` または `GPU - A10G` |
+| **Instance Size** | `x1`（1GPU） |
+| **Min Replicas** | `0`（コスト節約） |
+| **Max Replicas** | `1` |
 
 ## 学習詳細
 
