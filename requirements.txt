@@ -1,9 +1,10 @@
-# HF Inference Endpoints用の依存関係
-# Qwen3-VLはtransformers最新版が必要（qwen3_vlアーキテクチャのサポート）
-# 注意: HF Inference Toolkit 0.5.6との競合警告が出るが、機能的には動作する
+# HuggingFace Spaces / API用の依存関係
+# Qwen3-VLはtransformers最新版が必要
 transformers @ git+https://github.com/huggingface/transformers.git
 accelerate>=0.34.0
 peft>=0.13.0
 bitsandbytes>=0.44.0
 qwen-vl-utils>=0.0.8
+gradio>=4.0.0
+torch>=2.0.0
 
