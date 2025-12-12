@@ -95,6 +95,65 @@ pdfme-fineturning/
 
 bbox座標は0-1000の正規化座標。
 
+## Hugging Face Inference Endpoints
+
+ファインチューニングしたモデルをHugging Face Inference Endpointsにデプロイできます。
+
+### デプロイ手順
+
+1. モデルをHugging Face Hubにアップロード
+2. Inference Endpointsで新しいエンドポイントを作成
+3. カスタムハンドラー（`handler.py`）が自動的に使用される
+
+### 環境変数
+
+| 変数名 | デフォルト | 説明 |
+|--------|------------|------|
+| `BASE_MODEL` | `Qwen/Qwen3-VL-30B-A3B-Thinking` | ベースモデル |
+| `USE_LORA` | `false` | LoRAアダプターを使用するか |
+| `USE_4BIT` | `true` | 4bit量子化を使用するか |
+
+### APIリクエスト例
+
+```python
+import requests
+import base64
+
+# 画像をBase64エンコード
+with open("form.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+# リクエスト
+response = requests.post(
+    "https://your-endpoint.endpoints.huggingface.cloud",
+    headers={"Authorization": "Bearer YOUR_TOKEN"},
+    json={
+        "inputs": image_base64,
+        "parameters": {
+            "max_new_tokens": 2048
+        }
+    }
+)
+
+print(response.json())
+```
+
+### レスポンス例
+
+```json
+{
+  "raw_output": "{\"applicant_fields\": [{\"bbox\": [100, 200, 500, 250]}], \"count\": 1}",
+  "image_size": {"width": 1200, "height": 1600},
+  "parsed": {
+    "applicant_fields": [{"bbox": [100, 200, 500, 250]}],
+    "count": 1
+  },
+  "pixel_bboxes": [
+    {"bbox": [120, 320, 600, 400]}
+  ]
+}
+```
+
 ## 注意事項
 
 - Qwen3-VL-30B-A3B-ThinkingはMoEモデル（31Bパラメータ、アクティブ3B）
