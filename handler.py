@@ -16,6 +16,15 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 from peft import PeftModel
 
 
+# bitsandbytesが利用可能かチェック
+try:
+    from transformers import BitsAndBytesConfig
+    BITSANDBYTES_AVAILABLE = True
+except ImportError:
+    BITSANDBYTES_AVAILABLE = False
+    print("Warning: bitsandbytes not available, 4-bit quantization disabled")
+
+
 # プロンプトテンプレート
 SYSTEM_PROMPT = """あなたは日本の書類（申請書、届出書など）を分析するエキスパートです。
 書類には2種類の入力欄があります：
@@ -47,10 +56,16 @@ class EndpointHandler:
         use_lora = os.environ.get("USE_LORA", "true").lower() == "true"
         use_4bit = os.environ.get("USE_4BIT", "true").lower() == "true"
         
+        # bitsandbytesが利用できない場合は4bit無効
+        if use_4bit and not BITSANDBYTES_AVAILABLE:
+            print("Warning: 4-bit quantization requested but bitsandbytes not available. Using bfloat16 instead.")
+            use_4bit = False
+        
         print(f"Loading model from: {path or base_model}")
         print(f"Device: {self.device}")
         print(f"Use LoRA: {use_lora}")
         print(f"Use 4bit: {use_4bit}")
+        print(f"bitsandbytes available: {BITSANDBYTES_AVAILABLE}")
         
         # プロセッサをロード
         self.processor = AutoProcessor.from_pretrained(
@@ -59,8 +74,7 @@ class EndpointHandler:
         )
         
         # モデルをロード
-        if use_4bit:
-            from transformers import BitsAndBytesConfig
+        if use_4bit and BITSANDBYTES_AVAILABLE:
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
@@ -239,4 +253,3 @@ class EndpointHandler:
             int((x2 / 1000) * img_width),
             int((y2 / 1000) * img_height),
         ]
-

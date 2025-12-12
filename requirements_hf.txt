@@ -1,0 +1,6 @@
+# Hugging Face Inference Endpoints用の依存関係
+bitsandbytes>=0.41.0
+accelerate>=0.25.0
+peft>=0.7.0
+qwen-vl-utils
+
