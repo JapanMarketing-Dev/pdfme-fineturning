@@ -12,7 +12,7 @@ from typing import Any
 
 import torch
 from PIL import Image
-from transformers import Qwen3VLMoeForConditionalGeneration, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor
 from peft import PeftModel
 
 
@@ -43,8 +43,8 @@ class EndpointHandler:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         # 環境変数から設定を取得
-        base_model = os.environ.get("BASE_MODEL", "Qwen/Qwen3-VL-30B-A3B-Thinking")
-        use_lora = os.environ.get("USE_LORA", "false").lower() == "true"
+        base_model = os.environ.get("BASE_MODEL", "Qwen/Qwen3-VL-8B-Instruct")
+        use_lora = os.environ.get("USE_LORA", "true").lower() == "true"
         use_4bit = os.environ.get("USE_4BIT", "true").lower() == "true"
         
         print(f"Loading model from: {path or base_model}")
@@ -66,14 +66,14 @@ class EndpointHandler:
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
             )
-            self.model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+            self.model = AutoModelForImageTextToText.from_pretrained(
                 base_model,
                 quantization_config=bnb_config,
                 device_map="auto",
                 trust_remote_code=True,
             )
         else:
-            self.model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+            self.model = AutoModelForImageTextToText.from_pretrained(
                 base_model,
                 torch_dtype=torch.bfloat16,
                 device_map="auto",

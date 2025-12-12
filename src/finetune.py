@@ -16,18 +16,18 @@ import torch
 from PIL import Image
 from datasets import load_dataset, Dataset
 from transformers import (
-    Qwen3VLMoeForConditionalGeneration,  # MoEモデル用
+    AutoModelForImageTextToText,
     AutoProcessor,
     TrainingArguments,
     Trainer,
     BitsAndBytesConfig,
 )
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model
 from tqdm import tqdm
 
 
-# モデル設定（Qwen3-VL-30B-A3B-Thinking: MoEモデル、31Bパラメータ、アクティブ3B）
-MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Thinking"
+# モデル設定（Qwen3-VL-8B-Instruct: 8Bパラメータ、PEFTと完全互換）
+MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
 
 # プロンプトテンプレート（日本語の書類向け）
 SYSTEM_PROMPT = """あなたは日本の書類（申請書、届出書など）を分析するエキスパートです。
@@ -135,14 +135,12 @@ class FormFieldDataCollator:
             text = self.processor.apply_chat_template(messages, tokenize=False)
             texts.append(text)
         
-        # プロセッサで処理
+        # プロセッサで処理（truncationを無効化して画像トークンの不整合を防ぐ）
         inputs = self.processor(
             text=texts,
             images=images,
             return_tensors="pt",
             padding=True,
-            truncation=True,
-            max_length=self.max_length,
         )
         
         # ラベル設定
@@ -206,9 +204,8 @@ def main():
         trust_remote_code=True,
     )
     
-    # モデルをロード（Qwen3-VL MoEモデル）
+    # モデルをロード
     print("\nモデルをロード中...")
-    print("注意: Qwen3-VL-30B-A3B-Thinkingは31Bパラメータ（アクティブ3B）のMoEモデルです")
     
     if args.use_4bit:
         bnb_config = BitsAndBytesConfig(
@@ -217,7 +214,7 @@ def main():
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True,
         )
-        model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+        model = AutoModelForImageTextToText.from_pretrained(
             args.model,
             quantization_config=bnb_config,
             device_map="auto",
@@ -225,7 +222,7 @@ def main():
             trust_remote_code=True,
         )
     else:
-        model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+        model = AutoModelForImageTextToText.from_pretrained(
             args.model,
             torch_dtype=torch.bfloat16,
             device_map="auto",
@@ -233,17 +230,16 @@ def main():
             trust_remote_code=True,
         )
     
-    # LoRA準備
+    # LoRA準備（Qwen3-VLはprepare_model_for_kbit_trainingと互換性がないため直接設定）
     print("\nLoRA設定中...")
-    model = prepare_model_for_kbit_training(model)
     
-    # MoEモデル用のLoRA設定（Attention層をターゲット）
+    # gradient_checkpointingを有効化
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    
     lora_config = LoraConfig(
         r=16,
         lora_alpha=32,
-        target_modules=[
-            "q_proj", "k_proj", "v_proj", "o_proj",  # Attention
-        ],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
@@ -288,9 +284,36 @@ def main():
     model.save_pretrained(output_dir)
     processor.save_pretrained(output_dir)
     
+    # Hugging Faceにアップロード
+    hf_repo = "takumi123xxx/pdfme-form-field-detector-lora"
+    print(f"\nHugging Faceにアップロード中... ({hf_repo})")
+    try:
+        from huggingface_hub import HfApi, create_repo
+        
+        api = HfApi()
+        
+        # リポジトリを作成（存在しない場合）
+        try:
+            create_repo(hf_repo, token=hf_token, exist_ok=True, repo_type="model")
+        except Exception as e:
+            print(f"リポジトリ作成スキップ: {e}")
+        
+        # モデルをアップロード
+        api.upload_folder(
+            folder_path=output_dir,
+            repo_id=hf_repo,
+            token=hf_token,
+            commit_message=f"Upload finetuned LoRA adapter - {timestamp}",
+        )
+        print(f"アップロード完了: https://huggingface.co/{hf_repo}")
+    except Exception as e:
+        print(f"アップロードエラー: {e}")
+        print("ローカルに保存されたモデルを手動でアップロードしてください")
+    
     print("\n" + "=" * 60)
     print("完了!")
     print(f"出力ディレクトリ: {output_dir}")
+    print(f"Hugging Face: https://huggingface.co/{hf_repo}")
     print("=" * 60)
 
 

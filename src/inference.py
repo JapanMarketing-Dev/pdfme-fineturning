@@ -13,7 +13,7 @@ from pathlib import Path
 
 import torch
 from PIL import Image
-from transformers import Qwen3VLMoeForConditionalGeneration, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor
 from peft import PeftModel
 
 
@@ -32,14 +32,14 @@ USER_PROMPT = """この画像から、担当者（申請者・顧客）が記入
 
 
 def load_model(model_path, base_model=None, use_4bit=False):
-    """モデルをロード（Qwen3-VL MoEモデル対応）"""
+    """モデルをロード"""
     from transformers import BitsAndBytesConfig
     
     hf_token = os.environ.get("HF_TOKEN")
     
     # デフォルトベースモデル
     if base_model is None:
-        base_model = "Qwen/Qwen3-VL-30B-A3B-Thinking"
+        base_model = "Qwen/Qwen3-VL-8B-Instruct"
     
     # LoRAアダプターの場合
     if model_path != base_model:
@@ -52,7 +52,7 @@ def load_model(model_path, base_model=None, use_4bit=False):
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
             )
-            model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+            model = AutoModelForImageTextToText.from_pretrained(
                 base_model,
                 quantization_config=bnb_config,
                 device_map="auto",
@@ -60,7 +60,7 @@ def load_model(model_path, base_model=None, use_4bit=False):
                 trust_remote_code=True,
             )
         else:
-            model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+            model = AutoModelForImageTextToText.from_pretrained(
                 base_model,
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
@@ -72,7 +72,7 @@ def load_model(model_path, base_model=None, use_4bit=False):
         processor = AutoProcessor.from_pretrained(base_model, token=hf_token, trust_remote_code=True)
     else:
         # フルモデルの場合
-        model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+        model = AutoModelForImageTextToText.from_pretrained(
             model_path,
             torch_dtype=torch.bfloat16,
             device_map="auto",

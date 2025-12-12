@@ -6,6 +6,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN}
       - HF_HOME=/app/.cache/huggingface
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     volumes:
       - .:/app
       - ./data:/app/data

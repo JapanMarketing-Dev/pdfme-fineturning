@@ -1,67 +1,115 @@
-# PDFme Form Field Detection - ファインチューニング
+# PDFme Form Field Detection
 
-日本の書類（申請書、届出書など）から**担当者（申請者・顧客）が記入するフォームフィールド**の位置を検出するためのVision-Language Modelファインチューニング環境。
+日本の書類画像から「申請者が記入すべきフォーム欄」を自動検出するAIモデルのファインチューニングプロジェクト。
 
-**注意**: 職員が記入する欄（受付番号、処理日、担当印など）は検出対象外。
+## 背景と目的
 
-## 概要
+### 解決したい課題
+
+日本の行政書類や申請書には、多くの入力欄があります。しかし、それらは大きく2種類に分かれます：
+
+1. **申請者（担当者・顧客）が記入する欄** - 氏名、住所、電話番号など
+2. **職員（役所・会社側）が記入する欄** - 受付番号、処理日、担当印など
+
+書類を自動処理するシステムでは、「どこが申請者の入力欄か」を正確に判別する必要があります。
+
+### このプロジェクトの目的
+
+Vision-Language Model（VLM）をファインチューニングし、**初見の書類でも申請者の入力欄だけを検出できる汎用的なモデル**を作成します。
+
+### 出力イメージ
+
+```
+入力: 書類の画像
+出力: 申請者が記入すべきフィールドのbbox座標（JSON形式）
+```
+
+## モデル情報
 
 | 項目 | 内容 |
 |------|------|
-| データセット | [hand-dot/pdfme-form-field-dataset](https://huggingface.co/datasets/hand-dot/pdfme-form-field-dataset)（10件） |
-| ベースモデル | [Qwen3-VL-30B-A3B-Thinking](https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking)（MoE、31Bパラメータ） |
-| タスク | 担当者が記入するフォームフィールドの位置（bbox）検出 |
-| 手法 | QLoRA（4bit量子化 + LoRA） |
+| ベースモデル | [Qwen/Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) |
+| 学習手法 | QLoRA（4bit量子化 + LoRA） |
+| 学習データ | [hand-dot/pdfme-form-field-dataset](https://huggingface.co/datasets/hand-dot/pdfme-form-field-dataset) |
+| 公開先 | [takumi123xxx/pdfme-form-field-detector](https://huggingface.co/takumi123xxx/pdfme-form-field-detector) |
 
-## 必要環境
+## クイックスタート
 
-- Docker + NVIDIA Container Toolkit
-- NVIDIA GPU（推奨: 48GB+ VRAM、RTX PRO 6000等）
-- HuggingFace Token
-
-## セットアップ
-
-### 1. 環境変数設定
+### 1. 環境準備
 
 ```bash
+# リポジトリをクローン
+git clone https://github.com/JapanMarketing-Dev/pdfme-fineturning.git
+cd pdfme-fineturning
+
+# HuggingFace Tokenを設定
 export HF_TOKEN=your_huggingface_token
 ```
 
-### 2. Docker環境でファインチューニング実行
+### 2. ファインチューニングの実行
 
 ```bash
-# Dockerイメージをビルド
+# Dockerイメージをビルド＆実行
 docker compose build
-
-# ファインチューニング実行
 docker compose run finetune
 ```
 
-### 3. 推論テスト
+完了すると、モデルは自動的にHugging Face Hubにアップロードされます。
+
+### 3. 推論（テスト）
 
 ```bash
 docker compose run finetune python src/inference.py \
   --model outputs/pdfme_lora_YYYYMMDD_HHMMSS \
-  --base-model Qwen/Qwen3-VL-30B-A3B-Thinking \
-  --image data/images/sample_000.png \
-  --use-4bit
+  --image path/to/your/image.png
 ```
 
-## ファイル構成
+## 使い方（推論API）
 
+### Pythonでの利用例
+
+```python
+import requests
+import base64
+
+# 画像をBase64エンコード
+with open("application_form.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+# Hugging Face Inference Endpointsへリクエスト
+response = requests.post(
+    "https://your-endpoint.endpoints.huggingface.cloud",
+    headers={"Authorization": "Bearer YOUR_HF_TOKEN"},
+    json={
+        "inputs": image_base64,
+        "parameters": {"max_new_tokens": 2048}
+    }
+)
+
+result = response.json()
+print(result["predictions"])
 ```
-pdfme-fineturning/
-├── Dockerfile              # Docker設定
-├── docker-compose.yml      # Docker Compose設定
-├── requirements.txt        # Python依存関係
-├── src/
-│   ├── download_dataset.py # データセット取得・確認
-│   ├── finetune.py         # ファインチューニング本体
-│   └── inference.py        # 推論スクリプト
-└── README.md
+
+### レスポンス形式
+
+```json
+{
+  "predictions": {
+    "applicant_fields": [
+      {"bbox": [100, 200, 500, 250], "bbox_pixel": [120, 320, 600, 400]},
+      {"bbox": [100, 300, 500, 350], "bbox_pixel": [120, 480, 600, 560]}
+    ],
+    "count": 2
+  }
+}
 ```
+
+- `bbox`: 0-1000の正規化座標
+- `bbox_pixel`: 元画像のピクセル座標
 
 ## プロンプト設計
+
+モデルには以下のプロンプトで指示しています：
 
 ### システムプロンプト
 ```
@@ -81,83 +129,96 @@ pdfme-fineturning/
 結果はJSON形式で、各フィールドのbbox座標（0-1000正規化）を返してください。
 ```
 
-## 出力フォーマット
+## ファイル構成
 
-```json
-{
-  "applicant_fields": [
-    {"bbox": [100, 200, 500, 250]},
-    {"bbox": [100, 300, 500, 350]}
-  ],
-  "count": 2
-}
+```
+pdfme-fineturning/
+├── Dockerfile              # Docker環境定義
+├── docker-compose.yml      # Docker Compose設定
+├── requirements.txt        # Python依存関係
+├── handler.py              # Inference Endpoints用ハンドラー
+├── src/
+│   ├── download_dataset.py # データセット取得スクリプト
+│   ├── finetune.py         # ファインチューニング本体
+│   └── inference.py        # ローカル推論スクリプト
+└── README.md
 ```
 
-bbox座標は0-1000の正規化座標。
+## 必要環境
+
+- Docker + NVIDIA Container Toolkit
+- NVIDIA GPU（推奨: 24GB+ VRAM）
+- HuggingFace Token（読み書き権限）
 
 ## Hugging Face Inference Endpoints
 
-ファインチューニングしたモデルをHugging Face Inference Endpointsにデプロイできます。
+ファインチューニング済みモデルをAPIとしてデプロイできます。
 
 ### デプロイ手順
 
-1. モデルをHugging Face Hubにアップロード
-2. Inference Endpointsで新しいエンドポイントを作成
-3. カスタムハンドラー（`handler.py`）が自動的に使用される
+1. Hugging Face Hubで [takumi123xxx/pdfme-form-field-detector](https://huggingface.co/takumi123xxx/pdfme-form-field-detector) にアクセス
+2. 「Deploy」→「Inference Endpoints」を選択
+3. GPU（A10G以上推奨）を選択してデプロイ
 
-### 環境変数
+### 環境変数（オプション）
 
 | 変数名 | デフォルト | 説明 |
 |--------|------------|------|
-| `BASE_MODEL` | `Qwen/Qwen3-VL-30B-A3B-Thinking` | ベースモデル |
-| `USE_LORA` | `false` | LoRAアダプターを使用するか |
-| `USE_4BIT` | `true` | 4bit量子化を使用するか |
+| `BASE_MODEL` | `Qwen/Qwen3-VL-8B-Instruct` | ベースモデル |
+| `USE_LORA` | `true` | LoRAアダプターを使用 |
+| `USE_4BIT` | `true` | 4bit量子化を使用 |
 
-### APIリクエスト例
+## 技術的な補足
+
+### なぜQwen3-VL-8B-Instructを選んだか
+
+- 最初は`Qwen3-VL-30B-A3B-Thinking`（MoEモデル）を検討
+- PEFTライブラリとの互換性問題があったため、安定した8Bモデルを採用
+- 8Bでも十分な精度が期待できる
+
+### QLoRAの設定
 
 ```python
-import requests
-import base64
-
-# 画像をBase64エンコード
-with open("form.png", "rb") as f:
-    image_base64 = base64.b64encode(f.read()).decode()
-
-# リクエスト
-response = requests.post(
-    "https://your-endpoint.endpoints.huggingface.cloud",
-    headers={"Authorization": "Bearer YOUR_TOKEN"},
-    json={
-        "inputs": image_base64,
-        "parameters": {
-            "max_new_tokens": 2048
-        }
-    }
+LoraConfig(
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate", "up_proj", "down_proj"],
+    lora_dropout=0.05,
+    task_type="CAUSAL_LM",
 )
-
-print(response.json())
 ```
 
-### レスポンス例
+### 学習パラメータ
 
-```json
-{
-  "raw_output": "{\"applicant_fields\": [{\"bbox\": [100, 200, 500, 250]}], \"count\": 1}",
-  "image_size": {"width": 1200, "height": 1600},
-  "parsed": {
-    "applicant_fields": [{"bbox": [100, 200, 500, 250]}],
-    "count": 1
-  },
-  "pixel_bboxes": [
-    {"bbox": [120, 320, 600, 400]}
-  ]
-}
+- エポック数: 3
+- バッチサイズ: 1（gradient accumulation: 4）
+- 学習率: 2e-4
+- 量子化: 4bit（NF4）
+
+## トラブルシューティング
+
+### OOMエラーが出る場合
+
+```bash
+# バッチサイズを下げる
+docker compose run finetune python src/finetune.py --batch-size 1
+
+# gradient accumulation stepsを上げる（コード内で変更）
 ```
 
-## 注意事項
+### モデルのロードが遅い場合
 
-- Qwen3-VL-30B-A3B-ThinkingはMoEモデル（31Bパラメータ、アクティブ3B）
-- transformers最新版（4.57.0+）が必要
-- データセットは10件と少量のため、過学習に注意
-- 汎用性を高めるにはデータ拡張が有効
+transformersを最新版にアップデート:
+```bash
+pip install git+https://github.com/huggingface/transformers
+```
 
+## 今後の改善案
+
+1. **データ拡張** - 現在10件と少量なので、回転・ノイズ追加などで増やす
+2. **Multi-turn対話** - フィールドの種類（氏名、住所など）も識別
+3. **より大きなモデル** - PEFT互換の大型モデルが出たら試す
+
+## ライセンス
+
+MIT License

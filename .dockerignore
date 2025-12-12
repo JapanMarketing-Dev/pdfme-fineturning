@@ -1,0 +1,27 @@
+# Cache directories
+.cache/
+.venv/
+__pycache__/
+*.pyc
+
+# Output directories
+outputs/
+data/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.dockerfile
+docker-compose*.yml
+!docker-compose.yml
+
+# Docs
+*.md
+!README.md
+
