@@ -1,0 +1,24 @@
+# PyTorch with CUDA support
+torch>=2.4.0
+torchvision>=0.19.0
+
+# Transformers ecosystem (Qwen3-VL requires latest version)
+# Install from source: pip install git+https://github.com/huggingface/transformers
+transformers>=4.57.0
+accelerate>=0.34.0
+datasets>=3.0.0
+peft>=0.13.0
+bitsandbytes>=0.44.0
+
+# Image processing
+Pillow>=10.0.0
+qwen-vl-utils>=0.0.8
+
+# Utilities
+tqdm>=4.66.0
+pandas>=2.0.0
+huggingface_hub>=0.26.0
+
+# Optional: for better training
+wandb>=0.18.0
+
