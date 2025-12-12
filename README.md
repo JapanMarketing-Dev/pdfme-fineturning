@@ -1,3 +1,19 @@
+---
+language:
+  - ja
+license: mit
+library_name: peft
+base_model: Qwen/Qwen3-VL-8B-Instruct
+tags:
+  - vision-language-model
+  - document-understanding
+  - form-field-detection
+  - lora
+  - qwen3-vl
+  - japanese
+pipeline_tag: image-text-to-text
+---
+
 # PDFme Form Field Detection
 
 日本の書類画像から「申請者が記入すべきフォーム欄」を自動検出するAIモデルのファインチューニングプロジェクト。
