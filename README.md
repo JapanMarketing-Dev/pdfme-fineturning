@@ -348,6 +348,25 @@ pip install git+https://github.com/huggingface/transformers
    - 推論結果を人間がレビュー → 誤りをデータセットに追加
    - 継続的な精度向上サイクル
 
+## トラブルシューティング
+
+### HF Inference Endpointsで`qwen3_vl`が認識されないエラー
+
+**エラー内容:**
+```
+ValueError: The checkpoint you are trying to load has model type `qwen3_vl` but Transformers does not recognize this architecture.
+```
+
+**原因:**
+- Qwen3-VLは非常に新しいモデルで、transformersの最新版でしかサポートされていない
+- HF Inference Endpointsのデフォルトのtransformersバージョンが古い
+
+**解決策:**
+`requirements_hf.txt`でtransformersをGitHubソースからインストールするように指定:
+```
+transformers @ git+https://github.com/huggingface/transformers.git
+```
+
 ## ライセンス
 
 MIT License
