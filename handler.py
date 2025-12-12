@@ -17,11 +17,16 @@ from peft import PeftModel
 
 
 # bitsandbytesが利用可能かチェック
+# transformersからのimportだけでは不十分（bitsandbytesパッケージ自体の存在をチェックする必要がある）
 try:
+    import importlib.metadata
+    importlib.metadata.version("bitsandbytes")  # パッケージの存在確認
+    import bitsandbytes  # 実際にインポートできるか確認
     from transformers import BitsAndBytesConfig
     BITSANDBYTES_AVAILABLE = True
-except ImportError:
+except (ImportError, importlib.metadata.PackageNotFoundError):
     BITSANDBYTES_AVAILABLE = False
+    BitsAndBytesConfig = None  # 未定義エラー防止
     print("Warning: bitsandbytes not available, 4-bit quantization disabled")
 
 
