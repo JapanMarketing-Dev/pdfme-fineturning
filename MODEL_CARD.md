@@ -43,6 +43,31 @@ Given an image of a Japanese document, this model identifies the bounding boxes 
 | Training Data | [hand-dot/pdfme-form-field-dataset](https://huggingface.co/datasets/hand-dot/pdfme-form-field-dataset) |
 | Output Format | JSON with normalized bbox coordinates (0-1000) |
 
+## Performance
+
+### Training Progress
+
+| Epoch | Loss | Learning Rate |
+|-------|------|---------------|
+| 0.4 | 20.74 | 0 |
+| 1.0 | 20.84 | 0.000175 |
+| 2.0 | 15.05 | 0.0001 |
+| 2.8 | 12.24 | 0.00005 |
+
+**Loss improved: 20.74 → 12.24 (41% reduction)**
+
+### Current Limitations
+
+1. **Small training dataset (10 samples)** - Limited generalization
+2. **Bbox coordinate precision** - Depends on image size due to normalization
+3. **Complex layouts** - May miss fields in multi-column or complex documents
+
+### Metrics (To be measured)
+
+- **Recall**: Percentage of ground truth fields detected
+- **Precision**: Percentage of detected fields that are correct
+- **IoU**: Overlap between predicted and ground truth bboxes
+
 ## Quick Start
 
 ### Installation
@@ -67,7 +92,7 @@ model = AutoModelForImageTextToText.from_pretrained(
     device_map="auto",
     trust_remote_code=True,
 )
-model = PeftModel.from_pretrained(model, "takumi123xxx/pdfme-form-field-detector")
+model = PeftModel.from_pretrained(model, "takumi123xxx/pdfme-form-field-detector-lora")
 processor = AutoProcessor.from_pretrained(base_model, trust_remote_code=True)
 
 # Prepare prompt
@@ -114,11 +139,25 @@ print(result)
 - `bbox`: `[x1, y1, x2, y2]` normalized to 0-1000 scale
 - To convert to pixels: `pixel_x = bbox_x / 1000 * image_width`
 
-## Limitations
+## Future Improvements
 
-- Trained on a small dataset (10 samples) - may not generalize well to all document types
-- Best suited for Japanese administrative/application forms
-- May require additional fine-tuning for specific document formats
+### Short-term
+
+1. **Data augmentation** - Rotation, scaling, noise to expand training data
+2. **Hyperparameter tuning** - Increase epochs, adjust learning rate
+3. **Evaluation pipeline** - Automated IoU, Precision, Recall calculation
+
+### Mid-term
+
+4. **Field type classification** - Identify field types (name, address, date, etc.)
+5. **Multi-turn dialogue** - Support conditional detection ("only detect name fields")
+6. **Model ensemble** - Train multiple LoRA adapters and vote
+
+### Long-term
+
+7. **Large-scale dataset** - 1000+ annotated samples across document types
+8. **Larger models** - Qwen3-VL-72B when PEFT compatible
+9. **Active learning** - Human review → feedback → continuous improvement
 
 ## Training Details
 
@@ -160,6 +199,31 @@ Apache 2.0
 | 学習データ | [hand-dot/pdfme-form-field-dataset](https://huggingface.co/datasets/hand-dot/pdfme-form-field-dataset) |
 | 出力形式 | JSON（0-1000正規化されたbbox座標） |
 
+## 性能評価
+
+### 学習の進捗
+
+| Epoch | Loss | 学習率 |
+|-------|------|--------|
+| 0.4 | 20.74 | 0 |
+| 1.0 | 20.84 | 0.000175 |
+| 2.0 | 15.05 | 0.0001 |
+| 2.8 | 12.24 | 0.00005 |
+
+**Loss改善: 20.74 → 12.24（41%減少）**
+
+### 現在の制限事項
+
+1. **学習データが少量（10件）** - 汎化性能に限界
+2. **bbox座標の精度** - 正規化のため画像サイズに依存
+3. **複雑なレイアウト** - 多段組みや複雑な書類では検出漏れの可能性
+
+### 評価指標（今後測定予定）
+
+- **検出率（Recall）**: 正解フィールドのうち、検出できた割合
+- **適合率（Precision）**: 検出したフィールドのうち、正解だった割合
+- **IoU**: bbox座標の重なり具合
+
 ## 使い方
 
 ### インストール
@@ -184,7 +248,7 @@ model = AutoModelForImageTextToText.from_pretrained(
     device_map="auto",
     trust_remote_code=True,
 )
-model = PeftModel.from_pretrained(model, "takumi123xxx/pdfme-form-field-detector")
+model = PeftModel.from_pretrained(model, "takumi123xxx/pdfme-form-field-detector-lora")
 processor = AutoProcessor.from_pretrained(base_model, trust_remote_code=True)
 
 # プロンプト準備
@@ -231,11 +295,25 @@ print(result)
 - `bbox`: `[x1, y1, x2, y2]` は0-1000に正規化された座標
 - ピクセル座標への変換: `ピクセルX = bbox_x / 1000 * 画像幅`
 
-## 制限事項
+## 今後の改善案
 
-- 学習データが10件と少量のため、すべての書類タイプに対応できない可能性があります
-- 日本の行政書類・申請書に最適化されています
-- 特定の書類形式には追加のファインチューニングが必要な場合があります
+### 短期的改善（すぐに実施可能）
+
+1. **データ拡張** - 回転、スケール変換、ノイズ追加で学習データを増やす
+2. **ハイパーパラメータ調整** - エポック数増加、学習率最適化
+3. **評価パイプライン構築** - IoU、Precision、Recallの自動計算
+
+### 中期的改善（1-2週間）
+
+4. **フィールド種類の分類** - 氏名、住所、日付などの種類を識別
+5. **Multi-turn対話対応** - 「氏名欄だけ検出して」などの条件付き検出
+6. **モデルアンサンブル** - 複数のLoRAアダプターを学習し、投票で決定
+
+### 長期的改善（1ヶ月以上）
+
+7. **大規模データセット構築** - 1000件以上のアノテーション済みデータ
+8. **より大きなモデル** - Qwen3-VL-72B等、PEFT対応後に試行
+9. **Active Learning** - 人間のレビュー→フィードバック→継続的改善
 
 ## 学習詳細
 
@@ -248,4 +326,3 @@ print(result)
 ## ライセンス
 
 Apache 2.0
-

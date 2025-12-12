@@ -31,7 +31,36 @@ Vision-Language Model（VLM）をファインチューニングし、**初見の
 | ベースモデル | [Qwen/Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) |
 | 学習手法 | QLoRA（4bit量子化 + LoRA） |
 | 学習データ | [hand-dot/pdfme-form-field-dataset](https://huggingface.co/datasets/hand-dot/pdfme-form-field-dataset) |
-| 公開先 | [takumi123xxx/pdfme-form-field-detector](https://huggingface.co/takumi123xxx/pdfme-form-field-detector) |
+| 公開先 | [takumi123xxx/pdfme-form-field-detector-lora](https://huggingface.co/takumi123xxx/pdfme-form-field-detector-lora) |
+
+## 性能評価
+
+### 学習曲線
+
+| Epoch | Loss | 学習率 |
+|-------|------|--------|
+| 0.4 | 20.74 | 0 |
+| 0.8 | 21.08 | 0.0002 |
+| 1.0 | 20.84 | 0.000175 |
+| 1.4 | 18.01 | 0.00015 |
+| 1.8 | 17.05 | 0.000125 |
+| 2.0 | 15.05 | 0.0001 |
+| 2.4 | 12.88 | 0.000075 |
+| 2.8 | 12.24 | 0.00005 |
+
+**Loss改善: 20.74 → 12.24（41%減少）**
+
+### 現在の制限事項
+
+1. **学習データが少量（10件）** - 汎化性能に限界がある
+2. **bbox座標の精度** - 正規化座標のため、ピクセル単位での精度は画像サイズに依存
+3. **複雑なレイアウト** - 多段組みや複雑な書類では検出漏れの可能性
+
+### 評価指標（今後測定予定）
+
+- **検出率（Recall）**: 正解フィールドのうち、検出できた割合
+- **適合率（Precision）**: 検出したフィールドのうち、正解だった割合
+- **IoU（Intersection over Union）**: bbox座標の重なり具合
 
 ## クイックスタート
 
@@ -137,6 +166,7 @@ pdfme-fineturning/
 ├── docker-compose.yml      # Docker Compose設定
 ├── requirements.txt        # Python依存関係
 ├── handler.py              # Inference Endpoints用ハンドラー
+├── MODEL_CARD.md           # Hugging Face用モデルカード
 ├── src/
 │   ├── download_dataset.py # データセット取得スクリプト
 │   ├── finetune.py         # ファインチューニング本体
@@ -156,7 +186,7 @@ pdfme-fineturning/
 
 ### デプロイ手順
 
-1. Hugging Face Hubで [takumi123xxx/pdfme-form-field-detector](https://huggingface.co/takumi123xxx/pdfme-form-field-detector) にアクセス
+1. Hugging Face Hubで [takumi123xxx/pdfme-form-field-detector-lora](https://huggingface.co/takumi123xxx/pdfme-form-field-detector-lora) にアクセス
 2. 「Deploy」→「Inference Endpoints」を選択
 3. GPU（A10G以上推奨）を選択してデプロイ
 
@@ -215,9 +245,47 @@ pip install git+https://github.com/huggingface/transformers
 
 ## 今後の改善案
 
-1. **データ拡張** - 現在10件と少量なので、回転・ノイズ追加などで増やす
-2. **Multi-turn対話** - フィールドの種類（氏名、住所など）も識別
-3. **より大きなモデル** - PEFT互換の大型モデルが出たら試す
+### 短期的改善（すぐに実施可能）
+
+1. **データ拡張**
+   - 回転（±5度）、スケール変換、ノイズ追加で学習データを増やす
+   - 10件 → 100件以上に拡張することで汎化性能向上
+
+2. **ハイパーパラメータ調整**
+   - エポック数を5-10に増加（過学習に注意）
+   - 学習率スケジューラーの最適化
+   - LoRAランクを32に上げて表現力向上
+
+3. **評価パイプライン構築**
+   - IoU、Precision、Recallの自動計算
+   - テストデータセットの作成（学習データと別に）
+
+### 中期的改善（1-2週間）
+
+4. **アノテーションの拡充**
+   - フィールドの種類（氏名、住所、日付など）のラベル追加
+   - 職員欄のネガティブサンプル明示的に追加
+
+5. **Multi-turn対話対応**
+   - 「氏名欄だけ検出して」などの条件付き検出
+   - 検出結果の修正・フィードバック機能
+
+6. **モデルアンサンブル**
+   - 複数のLoRAアダプターを学習し、投票で最終結果を決定
+
+### 長期的改善（1ヶ月以上）
+
+7. **大規模データセット構築**
+   - 様々な書類タイプ（住民票、確定申告、各種届出）を収集
+   - 1000件以上のアノテーション済みデータ
+
+8. **より大きなモデルの活用**
+   - Qwen3-VL-72B等、PEFT対応後に試行
+   - 専用のObject Detectionモデルとのハイブリッド
+
+9. **Active Learning**
+   - 推論結果を人間がレビュー → 誤りをデータセットに追加
+   - 継続的な精度向上サイクル
 
 ## ライセンス
 
