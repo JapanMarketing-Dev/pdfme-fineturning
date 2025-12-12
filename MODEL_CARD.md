@@ -62,11 +62,23 @@ Given an image of a Japanese document, this model identifies the bounding boxes 
 2. **Bbox coordinate precision** - Depends on image size due to normalization
 3. **Complex layouts** - May miss fields in multi-column or complex documents
 
-### Metrics (To be measured)
+### Evaluation Results
 
-- **Recall**: Percentage of ground truth fields detected
-- **Precision**: Percentage of detected fields that are correct
-- **IoU**: Overlap between predicted and ground truth bboxes
+Evaluated on 10 training samples:
+
+| Metric | Value | Description |
+|--------|-------|-------------|
+| **Recall** | 0% | Matched predictions with IoU≥0.5 |
+| **Precision** | 0% | Correct predictions with IoU≥0.5 |
+| **Average IoU** | 0.08 | Overlap between predicted and ground truth |
+
+⚠️ **Current Status**: With only 10 training samples, the model can detect the "presence" of form fields but **location accuracy is low**. The output format (bbox_2d) is learned correctly, but more data is needed to improve coordinate precision.
+
+### Metric Definitions
+
+- **Recall**: Percentage of ground truth fields detected with IoU≥0.5
+- **Precision**: Percentage of detected fields that are correct with IoU≥0.5
+- **IoU**: Intersection over Union - overlap between predicted and ground truth bboxes (0-1)
 
 ## Quick Start
 
@@ -269,11 +281,23 @@ Apache 2.0
 2. **bbox座標の精度** - 正規化のため画像サイズに依存
 3. **複雑なレイアウト** - 多段組みや複雑な書類では検出漏れの可能性
 
-### 評価指標（今後測定予定）
+### 評価結果
 
-- **検出率（Recall）**: 正解フィールドのうち、検出できた割合
-- **適合率（Precision）**: 検出したフィールドのうち、正解だった割合
-- **IoU**: bbox座標の重なり具合
+10件の学習データで評価した結果：
+
+| 指標 | 値 | 説明 |
+|------|-----|------|
+| **Recall (検出率)** | 0% | IoU≥0.5でマッチした正解の割合 |
+| **Precision (適合率)** | 0% | IoU≥0.5でマッチした予測の割合 |
+| **平均IoU** | 0.08 | 予測と正解のbbox重なり度合い |
+
+⚠️ **現状の課題**: 学習データが10件と少なく、モデルはフォームフィールドの「存在」は検出できるが、**位置精度が低い**状態です。
+
+### 評価指標の定義
+
+- **Recall（検出率）**: 正解フィールドのうち、IoU≥0.5で検出できた割合
+- **Precision（適合率）**: 検出したフィールドのうち、IoU≥0.5で正解だった割合
+- **IoU**: 予測bboxと正解bboxの重なり具合（0〜1）
 
 ## 使い方
 
