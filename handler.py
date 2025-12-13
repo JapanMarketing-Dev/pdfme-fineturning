@@ -71,7 +71,7 @@ class EndpointHandler:
         
         self.model.eval()
         print("Model loaded!")
-
+    
     def __call__(self, data: dict[str, Any]) -> dict[str, Any]:
         inputs = data.get("inputs", data.get("image", ""))
         parameters = data.get("parameters", {})
@@ -86,7 +86,7 @@ class EndpointHandler:
         
         # 推論
         return self._predict(image, prompt, max_tokens)
-
+    
     def _load_image(self, img_input: str) -> Image.Image | None:
         try:
             if img_input.startswith("data:image"):
@@ -101,13 +101,13 @@ class EndpointHandler:
         except Exception as e:
             print(f"Image load error: {e}")
             return None
-
+    
     def _predict(self, image: Image.Image, prompt: str, max_tokens: int) -> dict:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": [
-                {"type": "image", "image": image},
-                {"type": "text", "text": prompt},
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": prompt},
             ]}
         ]
         
@@ -145,7 +145,7 @@ class EndpointHandler:
             result["parsed"] = None
         
         return result
-
+    
     def _to_pixels(self, bbox: list, size: tuple) -> list:
         w, h = size
         x1, y1, x2, y2 = bbox

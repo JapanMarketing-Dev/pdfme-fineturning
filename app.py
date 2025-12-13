@@ -1,153 +1,190 @@
-"""
-HuggingFace Spaces - Gradio App (ZeroGPU対応)
-PDFフォームから担当者が記入するフィールドを検出
-"""
-
-import os
-import json
-import spaces
-import torch
 import gradio as gr
-from PIL import Image
-from transformers import AutoModelForImageTextToText, AutoProcessor
-from peft import PeftModel
+import json
+import re
+import torch
+import traceback
+from PIL import Image, ImageDraw
 
-# 4bit量子化のサポート確認
 try:
-    from transformers import BitsAndBytesConfig
-    HAS_BNBITS = True
+    import spaces
+    GPU_DECORATOR = spaces.GPU(duration=120)  # 2分
 except ImportError:
-    HAS_BNBITS = False
-    BitsAndBytesConfig = None
+    def GPU_DECORATOR(fn):
+        return fn
 
-SYSTEM_PROMPT = """あなたは日本の書類を分析するエキスパートです。
-担当者（申請者）が記入する欄を検出してください。
-職員が記入する欄は除外してください。"""
-
-USER_PROMPT = """この画像から、担当者が記入する入力フィールドの位置をすべて検出してください。
-結果はJSON形式で、各フィールドのbbox座標（0-1000正規化）を返してください。"""
-
-# モデル設定
-BASE_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
-LORA_ADAPTER = "takumi123xxx/pdfme-form-field-detector-lora"
-
-# グローバル変数
 model = None
 processor = None
 
-
 def load_model():
-    """モデルをロード"""
     global model, processor
-    
     if model is not None:
         return
     
-    print("Loading model...")
+    from transformers import AutoModelForImageTextToText, AutoProcessor
+    from peft import PeftModel
     
+    # 32Bモデルに変更
+    BASE_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
+    LORA_ADAPTER = "takumi123xxx/pdfme-form-field-detector-lora-32b"
+    
+    print("Loading processor...")
     processor = AutoProcessor.from_pretrained(BASE_MODEL, trust_remote_code=True)
     
-    # 4bit量子化が使える場合は使用
-    if HAS_BNBITS:
+    print("Loading model (32B, this may take a while)...")
+    try:
+        from transformers import BitsAndBytesConfig
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
         )
-        model = AutoModelForImageTextToText.from_pretrained(
+        base = AutoModelForImageTextToText.from_pretrained(
             BASE_MODEL,
             quantization_config=bnb_config,
             device_map="auto",
             trust_remote_code=True,
+            torch_dtype=torch.float16,
         )
-    else:
-        model = AutoModelForImageTextToText.from_pretrained(
+    except Exception as e:
+        print(f"4bit failed: {e}, trying fp16...")
+        base = AutoModelForImageTextToText.from_pretrained(
             BASE_MODEL,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=torch.float16,
             device_map="auto",
             trust_remote_code=True,
         )
     
-    # LoRAアダプターをロード
-    model = PeftModel.from_pretrained(model, LORA_ADAPTER)
+    print("Loading LoRA adapter...")
+    model = PeftModel.from_pretrained(base, LORA_ADAPTER)
     model.eval()
     print("Model loaded!")
 
+def draw_boxes(image, bboxes):
+    img = image.copy()
+    draw = ImageDraw.Draw(img)
+    colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
+    
+    w, h = img.size
+    for i, box in enumerate(bboxes):
+        color = colors[i % len(colors)]
+        x1, y1, x2, y2 = box["bbox"]
+        x1, y1 = max(0, min(x1, w-1)), max(0, min(y1, h-1))
+        x2, y2 = max(0, min(x2, w-1)), max(0, min(y2, h-1))
+        
+        if x2 > x1 and y2 > y1:
+            for j in range(3):
+                draw.rectangle([x1-j, y1-j, x2+j, y2+j], outline=color)
+            label_y = max(0, y1-18)
+            draw.rectangle([x1, label_y, x1+80, label_y+18], fill=color)
+            draw.text((x1+2, label_y+2), f"{i+1}", fill="white")
+    return img
 
-@spaces.GPU(duration=120)
-def detect_fields(image: Image.Image, custom_prompt: str = None) -> str:
-    """画像から入力フィールドを検出"""
-    load_model()
+def parse_output(text, w, h):
+    bboxes = []
+    try:
+        json_match = re.search(r'[\[\{].*[\]\}]', text, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group())
+            if isinstance(data, dict) and "applicant_fields" in data:
+                for f in data["applicant_fields"]:
+                    if "bbox" in f and len(f["bbox"]) >= 4:
+                        b = f["bbox"]
+                        bboxes.append({
+                            "bbox": [int(b[0]/1000*w), int(b[1]/1000*h), int(b[2]/1000*w), int(b[3]/1000*h)],
+                            "label": str(f.get("label", "field"))
+                        })
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        for key in ["bbox", "bbox_2d", "bbox_0100", "bbox_01000", "bbox_0_to_1000"]:
+                            if key in item and isinstance(item[key], list) and len(item[key]) >= 4:
+                                b = item[key]
+                                bboxes.append({
+                                    "bbox": [int(b[0]/1000*w), int(b[1]/1000*h), int(b[2]/1000*w), int(b[3]/1000*h)],
+                                    "label": str(item.get("label", "field"))
+                                })
+                                break
+    except:
+        pass
     
+    if not bboxes:
+        for match in re.findall(r'\[(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]', text):
+            b = [int(x) for x in match]
+            bboxes.append({
+                "bbox": [int(b[0]/1000*w), int(b[1]/1000*h), int(b[2]/1000*w), int(b[3]/1000*h)],
+                "label": "field"
+            })
+    return bboxes
+
+@GPU_DECORATOR
+def predict(image):
     if image is None:
-        return json.dumps({"error": "画像が提供されていません"}, ensure_ascii=False)
-    
-    image = image.convert("RGB")
-    prompt = custom_prompt if custom_prompt else USER_PROMPT
-    
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": [
-            {"type": "image", "image": image},
-            {"type": "text", "text": prompt},
-        ]}
-    ]
-    
-    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    inputs = processor(text=[text], images=[image], return_tensors="pt", padding=True)
-    inputs = {k: v.to(model.device) for k, v in inputs.items()}
-    
-    with torch.no_grad():
-        outputs = model.generate(**inputs, max_new_tokens=2048, do_sample=False)
-    
-    generated = outputs[0][inputs["input_ids"].shape[1]:]
-    response = processor.decode(generated, skip_special_tokens=True)
-    
-    result = {
-        "raw_output": response,
-        "image_size": {"width": image.size[0], "height": image.size[1]}
-    }
+        return None, json.dumps({"error": "画像をアップロードしてください"}, ensure_ascii=False)
     
     try:
-        parsed = json.loads(response)
-        result["parsed"] = parsed
-        if "applicant_fields" in parsed:
-            w, h = image.size
-            result["pixel_bboxes"] = [
-                [int(f["bbox"][0]/1000*w), int(f["bbox"][1]/1000*h),
-                 int(f["bbox"][2]/1000*w), int(f["bbox"][3]/1000*h)]
-                for f in parsed["applicant_fields"]
-            ]
-    except json.JSONDecodeError:
-        result["parsed"] = None
-    
-    return json.dumps(result, ensure_ascii=False, indent=2)
+        load_model()
+        
+        if not isinstance(image, Image.Image):
+            image = Image.fromarray(image)
+        image = image.convert("RGB")
+        
+        # 画像サイズを制限（メモリ節約）
+        max_size = 1024
+        if max(image.size) > max_size:
+            ratio = max_size / max(image.size)
+            new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+            image = image.resize(new_size, Image.LANCZOS)
+        
+        w, h = image.size
+        
+        messages = [
+            {"role": "system", "content": "あなたは日本の書類を分析するエキスパートです。担当者が記入する欄を検出してください。"},
+            {"role": "user", "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": "この画像から担当者が記入する入力フィールドの位置をすべて検出してください。結果はJSON形式で返してください。"}
+            ]}
+        ]
+        
+        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        inputs = processor(text=[text], images=[image], return_tensors="pt", padding=True)
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            out = model.generate(**inputs, max_new_tokens=1024, do_sample=False)
+        
+        response = processor.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        
+        bboxes = parse_output(response, w, h)
+        result_img = draw_boxes(image, bboxes)
+        
+        result_json = {
+            "detected": len(bboxes),
+            "model": "Qwen3-VL-32B-Instruct + LoRA",
+            "fields": [{"id": i+1, "label": b["label"], "bbox": b["bbox"]} for i, b in enumerate(bboxes)],
+            "raw": response
+        }
+        return result_img, json.dumps(result_json, ensure_ascii=False, indent=2)
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Error: {error_msg}\n{traceback.format_exc()}")
+        return image if image else None, json.dumps({"error": error_msg}, ensure_ascii=False)
 
-
-# Gradio UI
-with gr.Blocks(title="PDFフォームフィールド検出") as demo:
+with gr.Blocks() as demo:
+    gr.Markdown("# PDFフォームフィールド検出デモ (32B)")
     gr.Markdown("""
-    # PDFフォームフィールド検出
+    書類画像をアップロードすると、申請者が記入すべきフィールドを検出してbboxを描画します。
     
-    日本の書類画像から「申請者が記入すべきフォーム欄」を自動検出します。
-    
-    **モデル**: Qwen3-VL-8B + LoRA (Recall: 18.08%)
+    **モデル**: Qwen3-VL-32B-Instruct + LoRA (QLoRA fine-tuned)
     """)
     
     with gr.Row():
-        with gr.Column():
-            image_input = gr.Image(type="pil", label="書類画像")
-            custom_prompt = gr.Textbox(
-                label="カスタムプロンプト（オプション）",
-                placeholder="空欄でデフォルトプロンプト使用",
-                lines=2
-            )
-            submit_btn = gr.Button("検出実行", variant="primary")
-        
-        with gr.Column():
-            output = gr.Textbox(label="検出結果（JSON）", lines=20, show_copy_button=True)
+        input_img = gr.Image(type="pil", label="入力画像")
+        output_img = gr.Image(type="pil", label="検出結果")
     
-    submit_btn.click(fn=detect_fields, inputs=[image_input, custom_prompt], outputs=output)
+    output_json = gr.Textbox(label="検出結果 (JSON)", lines=10)
+    btn = gr.Button("検出実行", variant="primary")
+    btn.click(fn=predict, inputs=input_img, outputs=[output_img, output_json])
 
-if __name__ == "__main__":
-    demo.launch()
+demo.launch(show_error=True)

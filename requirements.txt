@@ -1,7 +1,9 @@
 # Hugging Face Spaces用（Qwen3-VL対応）
-transformers>=4.47.0
+# Qwen3-VL-32Bには最新版が必要
+transformers>=4.51.0
 accelerate>=1.2.0
 peft>=0.14.0
+bitsandbytes>=0.45.0
 qwen-vl-utils>=0.0.8
 torch>=2.5.0
 torchvision>=0.20.0

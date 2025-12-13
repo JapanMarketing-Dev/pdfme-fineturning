@@ -2,9 +2,8 @@
 """
 PDFme Form Field Detection - ファインチューニングスクリプト
 ==========================================================
-Qwen3-VL-8B-InstructをQLoRAでファインチューニングします。
+Qwen3-VL-32B-InstructをQLoRAでファインチューニングします。
 PDFフォームの「担当者（申請者・顧客）が入力するフィールド」の位置を検出するタスク。
-職員が入力する欄は対象外。
 """
 
 import os
@@ -14,7 +13,7 @@ from datetime import datetime
 
 import torch
 from PIL import Image
-from datasets import load_dataset, Dataset
+from datasets import load_dataset, Dataset, load_from_disk
 from transformers import (
     AutoModelForImageTextToText,
     AutoProcessor,
@@ -26,10 +25,10 @@ from peft import LoraConfig, get_peft_model
 from tqdm import tqdm
 
 
-# モデル設定（Qwen3-VL-8B-Instruct: 8Bパラメータ、PEFTと完全互換）
-MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
+# モデル設定
+MODEL_NAME = "Qwen/Qwen3-VL-32B-Instruct"
 
-# プロンプトテンプレート（日本語の書類向け）
+# プロンプトテンプレート
 SYSTEM_PROMPT = """あなたは日本の書類（申請書、届出書など）を分析するエキスパートです。
 書類には2種類の入力欄があります：
 1. 担当者（申請者・顧客）が記入する欄 → 検出対象
@@ -44,11 +43,7 @@ USER_PROMPT = """この画像から、担当者（申請者・顧客）が記入
 
 
 def normalize_bbox_to_1000(bbox, img_width, img_height):
-    """
-    ピクセル座標を0-1000正規化座標に変換
-    入力: [x1, y1, x2, y2] (ピクセル座標)
-    出力: [x1, y1, x2, y2] (0-1000正規化)
-    """
+    """ピクセル座標を0-1000正規化座標に変換"""
     x1, y1, x2, y2 = bbox
     return [
         int((x1 / img_width) * 1000),
@@ -59,10 +54,7 @@ def normalize_bbox_to_1000(bbox, img_width, img_height):
 
 
 def prepare_training_data(ds):
-    """
-    HuggingFaceデータセットをファインチューニング用に変換
-    bboxesは「担当者が記入するフィールド」のみを含む
-    """
+    """HuggingFaceデータセットをファインチューニング用に変換"""
     samples = []
     
     for i, item in enumerate(tqdm(ds["train"], desc="データ準備")):
@@ -70,18 +62,13 @@ def prepare_training_data(ds):
         bboxes = item["bboxes"]
         img_width, img_height = img.size
         
-        # bboxesを正規化
         normalized_bboxes = [
             normalize_bbox_to_1000(bbox, img_width, img_height)
             for bbox in bboxes
         ]
         
-        # 回答フォーマット: JSON形式でbboxリストを返す
         answer = json.dumps({
-            "applicant_fields": [
-                {"bbox": bbox}
-                for bbox in normalized_bboxes
-            ],
+            "applicant_fields": [{"bbox": bbox} for bbox in normalized_bboxes],
             "count": len(normalized_bboxes)
         }, ensure_ascii=False)
         
@@ -114,28 +101,17 @@ class FormFieldDataCollator:
                 image = image.convert("RGB")
             images.append(image)
             
-            # チャット形式のテキスト構築（システムプロンプト付き）
             messages = [
-                {
-                    "role": "system",
-                    "content": item["system_prompt"],
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image},
-                        {"type": "text", "text": item["user_prompt"]},
-                    ],
-                },
-                {
-                    "role": "assistant",
-                    "content": item["answer"],
-                },
+                {"role": "system", "content": item["system_prompt"]},
+                {"role": "user", "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": item["user_prompt"]},
+                ]},
+                {"role": "assistant", "content": item["answer"]},
             ]
             text = self.processor.apply_chat_template(messages, tokenize=False)
             texts.append(text)
         
-        # プロセッサで処理（truncationを無効化して画像トークンの不整合を防ぐ）
         inputs = self.processor(
             text=texts,
             images=images,
@@ -143,9 +119,7 @@ class FormFieldDataCollator:
             padding=True,
         )
         
-        # ラベル設定
         inputs["labels"] = inputs["input_ids"].clone()
-        
         return inputs
 
 
@@ -156,26 +130,24 @@ def main():
     parser.add_argument("--epochs", type=int, default=3, help="エポック数")
     parser.add_argument("--batch-size", type=int, default=1, help="バッチサイズ")
     parser.add_argument("--lr", type=float, default=2e-4, help="学習率")
-    parser.add_argument("--output-dir", default="outputs/pdfme_lora", help="出力ディレクトリ")
+    parser.add_argument("--output-dir", default="/tmp/pdfme_lora_32b", help="出力ディレクトリ")
     parser.add_argument("--use-4bit", action="store_true", default=True, help="4bit量子化を使用")
-    parser.add_argument("--augmented-data", default=None, help="拡張データのパス（指定時は拡張データを使用）")
+    parser.add_argument("--augmented-data", default=None, help="拡張データのパス")
+    parser.add_argument("--hub-repo", default="takumi123xxx/pdfme-form-field-detector-lora-32b", help="HF Hubリポジトリ")
     args = parser.parse_args()
     
     print("=" * 60)
     print("PDFme Form Field Detection - ファインチューニング")
-    print("=" * 60)
-    print("タスク: 担当者（申請者）が記入するフィールドの検出")
-    print("       ※職員が記入する欄は対象外")
     print("=" * 60)
     print(f"モデル: {args.model}")
     print(f"エポック: {args.epochs}")
     print(f"バッチサイズ: {args.batch_size}")
     print(f"学習率: {args.lr}")
     print(f"4bit量子化: {args.use_4bit}")
-    print(f"拡張データ: {args.augmented_data or 'なし（元データを使用）'}")
+    print(f"拡張データ: {args.augmented_data or 'なし'}")
+    print(f"出力先: {args.hub_repo}")
     print("=" * 60)
     
-    # HuggingFace Token
     hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
         print("警告: HF_TOKENが設定されていません")
@@ -185,22 +157,18 @@ def main():
         print(f"\nGPU: {torch.cuda.get_device_name(0)}")
         print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
     else:
-        print("\n警告: GPUが見つかりません。CPUで実行します（非常に遅くなります）")
+        print("\n警告: GPUが見つかりません")
     
     # データセットをロード
     if args.augmented_data:
-        # 拡張データを使用
         print(f"\n拡張データをロード中: {args.augmented_data}")
-        from datasets import load_from_disk
         ds_raw = load_from_disk(args.augmented_data)
-        # 拡張データはすでに {"image": ..., "bboxes": ...} 形式
         ds = {"train": ds_raw}
         print(f"拡張データ数: {len(ds_raw)}件")
     else:
-        # 元データをダウンロード
-    print("\nデータセットをダウンロード中...")
-    ds = load_dataset("hand-dot/pdfme-form-field-dataset")
-    print(f"データ数: {len(ds['train'])}件")
+        print("\nデータセットをダウンロード中...")
+        ds = load_dataset("hand-dot/pdfme-form-field-dataset")
+        print(f"データ数: {len(ds['train'])}件")
     
     # データ準備
     print("\nデータを準備中...")
@@ -217,7 +185,7 @@ def main():
     )
     
     # モデルをロード
-    print("\nモデルをロード中...")
+    print("\nモデルをロード中（32Bモデルのため時間がかかります）...")
     
     if args.use_4bit:
         bnb_config = BitsAndBytesConfig(
@@ -232,6 +200,7 @@ def main():
             device_map="auto",
             token=hf_token,
             trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
         )
     else:
         model = AutoModelForImageTextToText.from_pretrained(
@@ -242,16 +211,14 @@ def main():
             trust_remote_code=True,
         )
     
-    # LoRA準備（Qwen3-VLはprepare_model_for_kbit_trainingと互換性がないため直接設定）
+    # LoRA設定
     print("\nLoRA設定中...")
-    
-    # gradient_checkpointingを有効化
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     
     lora_config = LoraConfig(
         r=16,
         lora_alpha=32,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
@@ -267,7 +234,7 @@ def main():
         output_dir=output_dir,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=4,
+        gradient_accumulation_steps=8,  # 32Bモデル用に増加
         learning_rate=args.lr,
         warmup_ratio=0.1,
         logging_steps=1,
@@ -297,38 +264,32 @@ def main():
     processor.save_pretrained(output_dir)
     
     # Hugging Faceにアップロード
-    hf_repo = "takumi123xxx/pdfme-form-field-detector-lora"
-    print(f"\nHugging Faceにアップロード中... ({hf_repo})")
+    print(f"\nHugging Faceにアップロード中... ({args.hub_repo})")
     try:
         from huggingface_hub import HfApi, create_repo
         
         api = HfApi()
-        
-        # リポジトリを作成（存在しない場合）
         try:
-            create_repo(hf_repo, token=hf_token, exist_ok=True, repo_type="model")
+            create_repo(args.hub_repo, token=hf_token, exist_ok=True, repo_type="model")
         except Exception as e:
             print(f"リポジトリ作成スキップ: {e}")
         
-        # モデルをアップロード
         api.upload_folder(
             folder_path=output_dir,
-            repo_id=hf_repo,
+            repo_id=args.hub_repo,
             token=hf_token,
-            commit_message=f"Upload finetuned LoRA adapter - {timestamp}",
+            commit_message=f"Upload finetuned LoRA adapter (32B) - {timestamp}",
         )
-        print(f"アップロード完了: https://huggingface.co/{hf_repo}")
+        print(f"アップロード完了: https://huggingface.co/{args.hub_repo}")
     except Exception as e:
         print(f"アップロードエラー: {e}")
-        print("ローカルに保存されたモデルを手動でアップロードしてください")
     
     print("\n" + "=" * 60)
     print("完了!")
     print(f"出力ディレクトリ: {output_dir}")
-    print(f"Hugging Face: https://huggingface.co/{hf_repo}")
+    print(f"Hugging Face: https://huggingface.co/{args.hub_repo}")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
-
