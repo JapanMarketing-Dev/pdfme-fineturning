@@ -158,6 +158,7 @@ def main():
     parser.add_argument("--lr", type=float, default=2e-4, help="学習率")
     parser.add_argument("--output-dir", default="outputs/pdfme_lora", help="出力ディレクトリ")
     parser.add_argument("--use-4bit", action="store_true", default=True, help="4bit量子化を使用")
+    parser.add_argument("--augmented-data", default=None, help="拡張データのパス（指定時は拡張データを使用）")
     args = parser.parse_args()
     
     print("=" * 60)
@@ -171,6 +172,7 @@ def main():
     print(f"バッチサイズ: {args.batch_size}")
     print(f"学習率: {args.lr}")
     print(f"4bit量子化: {args.use_4bit}")
+    print(f"拡張データ: {args.augmented_data or 'なし（元データを使用）'}")
     print("=" * 60)
     
     # HuggingFace Token
@@ -185,7 +187,17 @@ def main():
     else:
         print("\n警告: GPUが見つかりません。CPUで実行します（非常に遅くなります）")
     
-    # データセットをダウンロード
+    # データセットをロード
+    if args.augmented_data:
+        # 拡張データを使用
+        print(f"\n拡張データをロード中: {args.augmented_data}")
+        from datasets import load_from_disk
+        ds_raw = load_from_disk(args.augmented_data)
+        # 拡張データはすでに {"image": ..., "bboxes": ...} 形式
+        ds = {"train": ds_raw}
+        print(f"拡張データ数: {len(ds_raw)}件")
+    else:
+        # 元データをダウンロード
     print("\nデータセットをダウンロード中...")
     ds = load_dataset("hand-dot/pdfme-form-field-dataset")
     print(f"データ数: {len(ds['train'])}件")

@@ -1,9 +1,24 @@
-# Hugging Face Inference Endpoints用の依存関係
-# Qwen3-VLはtransformersの最新版が必要（qwen3_vlアーキテクチャのサポート）
-transformers @ git+https://github.com/huggingface/transformers.git
-bitsandbytes>=0.44.0
-accelerate>=0.34.0
-peft>=0.13.0
-qwen-vl-utils>=0.0.8
+# Hugging Face Inference Endpoints用
+# Qwen3-VLはtransformers>=4.51.0が必要
+
+# transformers - 安定版で動かない場合はgitソースを使用
+# transformers @ git+https://github.com/huggingface/transformers.git
+transformers>=4.51.0
+
+# PyTorch
 torch>=2.4.0
 
+# 高速化・最適化
+accelerate>=0.34.0
+
+# LoRA/PEFT
+peft>=0.13.0
+
+# Qwen3-VL画像処理
+qwen-vl-utils>=0.0.8
+
+# 4bit量子化（オプション）
+bitsandbytes>=0.44.0
+
+# 画像処理
+pillow>=10.0.0

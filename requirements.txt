@@ -1,10 +1,12 @@
-# HuggingFace Spaces / API用の依存関係
-# Qwen3-VLはtransformers最新版が必要
-transformers @ git+https://github.com/huggingface/transformers.git
-accelerate>=0.34.0
-peft>=0.13.0
-bitsandbytes>=0.44.0
+# Qwen3-VL対応（2025年版）
+# transformersはQwen3-VL対応版が必要（4.47+またはgit main）
+transformers>=4.47.0
+accelerate>=1.2.0
+peft>=0.14.0
+bitsandbytes>=0.45.0
 qwen-vl-utils>=0.0.8
-gradio>=4.0.0
-torch>=2.0.0
-
+torch>=2.5.0
+torchvision>=0.20.0
+pillow>=10.0.0
+datasets>=3.0.0
+gradio>=5.0.0
