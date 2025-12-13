@@ -1,12 +1,10 @@
-# Qwen3-VL対応（2025年版）
-# transformersはQwen3-VL対応版が必要（4.47+またはgit main）
+# Hugging Face Spaces用（Qwen3-VL対応）
 transformers>=4.47.0
 accelerate>=1.2.0
 peft>=0.14.0
-bitsandbytes>=0.45.0
 qwen-vl-utils>=0.0.8
 torch>=2.5.0
 torchvision>=0.20.0
 pillow>=10.0.0
-datasets>=3.0.0
 gradio>=5.0.0
+spaces
