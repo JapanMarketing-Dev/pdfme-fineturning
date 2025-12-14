@@ -23,14 +23,14 @@ def load_model():
     from transformers import AutoModelForImageTextToText, AutoProcessor
     from peft import PeftModel
     
-    # 32Bモデルに変更
-    BASE_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
-    LORA_ADAPTER = "takumi123xxx/pdfme-form-field-detector-lora-32b"
+    # 8Bモデル（Spaceで動作可能）
+    BASE_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+    LORA_ADAPTER = "takumi123xxx/pdfme-form-field-detector-lora"
     
     print("Loading processor...")
     processor = AutoProcessor.from_pretrained(BASE_MODEL, trust_remote_code=True)
     
-    print("Loading model (32B, this may take a while)...")
+    print("Loading model (8B)...")
     try:
         from transformers import BitsAndBytesConfig
         bnb_config = BitsAndBytesConfig(
@@ -160,7 +160,7 @@ def predict(image):
         
         result_json = {
             "detected": len(bboxes),
-            "model": "Qwen3-VL-32B-Instruct + LoRA",
+            "model": "Qwen3-VL-8B-Instruct + LoRA",
             "fields": [{"id": i+1, "label": b["label"], "bbox": b["bbox"]} for i, b in enumerate(bboxes)],
             "raw": response
         }
@@ -172,11 +172,11 @@ def predict(image):
         return image if image else None, json.dumps({"error": error_msg}, ensure_ascii=False)
 
 with gr.Blocks() as demo:
-    gr.Markdown("# PDFフォームフィールド検出デモ (32B)")
+    gr.Markdown("# PDFフォームフィールド検出デモ")
     gr.Markdown("""
     書類画像をアップロードすると、申請者が記入すべきフィールドを検出してbboxを描画します。
     
-    **モデル**: Qwen3-VL-32B-Instruct + LoRA (QLoRA fine-tuned)
+    **モデル**: Qwen3-VL-8B-Instruct + LoRA (QLoRA fine-tuned)
     """)
     
     with gr.Row():
