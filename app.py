@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw
 
 try:
     import spaces
-    GPU_DECORATOR = spaces.GPU(duration=120)  # 2分
+    GPU_DECORATOR = spaces.GPU(duration=60)  # 1分（クォータ節約）
 except ImportError:
     def GPU_DECORATOR(fn):
         return fn
