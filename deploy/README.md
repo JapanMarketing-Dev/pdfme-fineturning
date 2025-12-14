@@ -1,150 +1,254 @@
-# クラウドデプロイガイド
+# クラウドMLサービス デプロイガイド
 
-Qwen3-VL + LoRAファインチューニング済みモデルをクラウドでAPI化する手順です。
+Qwen3-VL + LoRAファインチューニング済みモデルを、マネージドMLサービスでAPI化する手順です。
 
-## 概要
+## 対応サービス
 
-| クラウド | 推奨インスタンス | GPU | VRAM | 料金目安（時間） |
-|----------|-----------------|-----|------|-----------------|
-| **AWS** | g5.xlarge | A10G | 24GB | ~$1.00 |
-| **GCP** | n1-standard-8 + T4 | T4 | 16GB | ~$0.80 |
-| **Azure** | Standard_NC4as_T4_v3 | T4 | 16GB | ~$0.90 |
-
-## 前提条件
-
-- Docker環境
-- Terraform（IaCデプロイの場合）
-- 各クラウドのCLI設定済み
+| クラウド | サービス | 推奨インスタンス | VRAM | 料金目安（時間） |
+|----------|---------|-----------------|------|-----------------|
+| **AWS** | SageMaker | ml.g5.xlarge | 24GB | ~$1.20 |
+| **GCP** | Vertex AI | n1-standard-8 + T4 | 16GB | ~$1.00 |
+| **Azure** | AI Foundry (Azure ML) | Standard_NC4as_T4_v3 | 16GB | ~$1.10 |
 
 ---
 
-## AWS
+## AWS SageMaker
 
-### 方法1: Terraform（推奨）
+### 前提条件
 
 ```bash
-cd deploy/aws/terraform
-
-# 変数を設定
-export TF_VAR_key_name="your-key-pair"
-
-# デプロイ
-terraform init
-terraform plan
-terraform apply
+pip install boto3 sagemaker
+aws configure  # AWSクレデンシャル設定
 ```
 
-### 方法2: シェルスクリプト
+### IAMロール作成
+
+SageMaker用のIAMロールが必要です：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {"Service": "sagemaker.amazonaws.com"},
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+必要なポリシー：
+- `AmazonSageMakerFullAccess`
+- `AmazonS3FullAccess`（モデルアーティファクト用）
+
+### デプロイ
 
 ```bash
-cd deploy/aws
+cd deploy/aws-sagemaker
 
-# 環境変数を設定
+# 環境変数設定
 export AWS_REGION=ap-northeast-1
-export KEY_PAIR_NAME=your-key-pair
-export SECURITY_GROUP=sg-xxxxxxxx
-export SUBNET_ID=subnet-xxxxxxxx
+export SAGEMAKER_ROLE_ARN=arn:aws:iam::123456789012:role/SageMakerRole
 
-# ECRにプッシュのみ
-./deploy.sh
+# エンドポイント作成
+python deploy.py create
+```
 
-# EC2も起動する場合
-LAUNCH_EC2=true ./deploy.sh
+### 推論テスト
+
+```bash
+python deploy.py test \
+  --endpoint-name pdfme-form-detector-20241214-123456 \
+  --image /path/to/document.png
+```
+
+### Python SDKでの利用
+
+```python
+import boto3
+import json
+import base64
+
+runtime = boto3.client("sagemaker-runtime", region_name="ap-northeast-1")
+
+with open("document.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+response = runtime.invoke_endpoint(
+    EndpointName="pdfme-form-detector-xxxxx",
+    ContentType="application/json",
+    Body=json.dumps({"inputs": image_base64})
+)
+
+result = json.loads(response["Body"].read().decode())
+print(result)
+```
+
+### クリーンアップ
+
+```bash
+python deploy.py delete --endpoint-name pdfme-form-detector-xxxxx
 ```
 
 ### 推奨インスタンス
 
 | インスタンス | GPU | VRAM | 料金/時間 | 用途 |
 |-------------|-----|------|----------|------|
-| **g5.xlarge** | A10G | 24GB | ~$1.00 | ⭐推奨（8Bモデル） |
-| g5.2xlarge | A10G | 24GB | ~$1.50 | 高CPU処理 |
-| g4dn.xlarge | T4 | 16GB | ~$0.50 | 低コスト |
-| p4d.24xlarge | A100×8 | 640GB | ~$32.00 | 32Bモデル |
+| **ml.g5.xlarge** | A10G | 24GB | ~$1.20 | ⭐推奨（8Bモデル） |
+| ml.g4dn.xlarge | T4 | 16GB | ~$0.75 | 低コスト |
+| ml.p4d.24xlarge | A100×8 | 640GB | ~$40.00 | 32Bモデル |
 
 ---
 
-## GCP
+## GCP Vertex AI
 
-### Terraform
+### 前提条件
 
 ```bash
-cd deploy/gcp/terraform
+pip install google-cloud-aiplatform
+gcloud auth application-default login
+gcloud config set project YOUR_PROJECT_ID
+```
 
-# 変数を設定
-export TF_VAR_project_id="your-project-id"
+### デプロイ手順
 
-# デプロイ
-terraform init
-terraform plan
-terraform apply
+#### 1. コンテナをビルド＆プッシュ
+
+```bash
+cd deploy/gcp-vertex
+
+# 環境変数設定
+export GCP_PROJECT_ID=your-project-id
+export GCP_REGION=asia-northeast1
+
+# コンテナをArtifact Registryにプッシュ
+python deploy.py build
+```
+
+#### 2. エンドポイント作成
+
+```bash
+# ビルド時に出力されたイメージURIを設定
+export CONTAINER_IMAGE=asia-northeast1-docker.pkg.dev/your-project/pdfme-models/pdfme-form-detector:xxxxx
+
+python deploy.py create
+```
+
+### Python SDKでの利用
+
+```python
+from google.cloud import aiplatform
+import base64
+
+aiplatform.init(project="your-project-id", location="asia-northeast1")
+endpoint = aiplatform.Endpoint("projects/xxx/locations/xxx/endpoints/xxx")
+
+with open("document.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+response = endpoint.predict(instances=[{"image_base64": image_base64}])
+print(response.predictions)
+```
+
+### クリーンアップ
+
+```bash
+python deploy.py delete --endpoint-id projects/xxx/locations/xxx/endpoints/xxx
 ```
 
 ### 推奨インスタンス
 
 | マシンタイプ | GPU | VRAM | 料金/時間 | 用途 |
 |-------------|-----|------|----------|------|
-| n1-standard-8 + T4 | T4 | 16GB | ~$0.80 | 低コスト |
-| **n1-standard-8 + L4** | L4 | 24GB | ~$1.00 | ⭐推奨 |
-| a2-highgpu-1g | A100 | 40GB | ~$3.00 | 高性能 |
+| n1-standard-8 + T4 | T4 | 16GB | ~$1.00 | 低コスト |
+| **n1-standard-8 + L4** | L4 | 24GB | ~$1.20 | ⭐推奨 |
+| a2-highgpu-1g | A100 | 40GB | ~$4.00 | 高性能 |
 
 ---
 
-## Azure
+## Azure AI Foundry (Azure ML)
 
-### Terraform
+### 前提条件
 
 ```bash
-cd deploy/azure/terraform
+pip install azure-ai-ml azure-identity
+az login
+```
 
-# 変数を設定
-export TF_VAR_admin_password="YourSecurePassword123!"
+### ワークスペース作成
 
-# デプロイ
-terraform init
-terraform plan
-terraform apply
+Azure MLワークスペースが必要です：
+
+```bash
+# リソースグループ作成
+az group create --name pdfme-rg --location japaneast
+
+# MLワークスペース作成
+az ml workspace create \
+  --name pdfme-workspace \
+  --resource-group pdfme-rg \
+  --location japaneast
+```
+
+### デプロイ
+
+```bash
+cd deploy/azure-foundry
+
+# 環境変数設定
+export AZURE_SUBSCRIPTION_ID=your-subscription-id
+export AZURE_RESOURCE_GROUP=pdfme-rg
+export AZURE_ML_WORKSPACE=pdfme-workspace
+
+# エンドポイント作成
+python deploy.py create
+```
+
+### Python SDKでの利用
+
+```python
+import requests
+import base64
+
+endpoint_url = "https://pdfme-detector-xxxxx.japaneast.inference.ml.azure.com/score"
+api_key = "your-api-key"
+
+with open("document.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+headers = {
+    "Authorization": f"Bearer {api_key}",
+    "Content-Type": "application/json",
+}
+
+response = requests.post(
+    endpoint_url,
+    headers=headers,
+    json={"image_base64": image_base64}
+)
+print(response.json())
+```
+
+### クリーンアップ
+
+```bash
+python deploy.py delete --endpoint-name pdfme-detector-xxxxx
 ```
 
 ### 推奨インスタンス
 
 | VMサイズ | GPU | VRAM | 料金/時間 | 用途 |
 |---------|-----|------|----------|------|
-| **Standard_NC4as_T4_v3** | T4 | 16GB | ~$0.90 | ⭐推奨 |
-| Standard_NC6s_v3 | V100 | 16GB | ~$2.50 | 高性能 |
-| Standard_NC24ads_A100_v4 | A100 | 80GB | ~$4.00 | 32Bモデル |
+| **Standard_NC4as_T4_v3** | T4 | 16GB | ~$1.10 | ⭐推奨 |
+| Standard_NC6s_v3 | V100 | 16GB | ~$3.00 | 高性能 |
+| Standard_NC24ads_A100_v4 | A100 | 80GB | ~$5.00 | 32Bモデル |
 
 ---
 
-## API仕様
+## API レスポンス形式
 
-### エンドポイント
-
-| メソッド | パス | 説明 |
-|---------|------|------|
-| GET | `/health` | ヘルスチェック |
-| POST | `/predict` | Base64画像で予測 |
-| POST | `/predict/upload` | ファイルアップロードで予測 |
-
-### Base64画像で予測
-
-```bash
-# 画像をBase64エンコード
-IMAGE_BASE64=$(base64 -w 0 document.png)
-
-# APIリクエスト
-curl -X POST "http://YOUR_IP:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d "{\"image_base64\": \"$IMAGE_BASE64\"}"
-```
-
-### ファイルアップロードで予測
-
-```bash
-curl -X POST "http://YOUR_IP:8000/predict/upload" \
-  -F "file=@document.png"
-```
-
-### レスポンス例
+全サービス共通のレスポンス形式：
 
 ```json
 {
@@ -152,41 +256,26 @@ curl -X POST "http://YOUR_IP:8000/predict/upload" \
     {
       "bbox_normalized": [100, 200, 500, 250],
       "bbox_pixel": [120, 320, 600, 400]
+    },
+    {
+      "bbox_normalized": [100, 300, 500, 350],
+      "bbox_pixel": [120, 480, 600, 560]
     }
   ],
-  "count": 1,
-  "raw_output": "[{\"bbox_0100\": [100, 200, 500, 250]}]",
+  "count": 2,
+  "raw_output": "[{\"bbox_0100\": [100, 200, 500, 250]}, ...]",
   "image_size": {"width": 1200, "height": 1600}
 }
 ```
 
----
-
-## Python SDKサンプル
-
-```python
-import requests
-import base64
-
-API_URL = "http://YOUR_IP:8000"
-
-def detect_fields(image_path: str) -> dict:
-    """画像から入力欄を検出"""
-    with open(image_path, "rb") as f:
-        image_base64 = base64.b64encode(f.read()).decode()
-    
-    response = requests.post(
-        f"{API_URL}/predict",
-        json={"image_base64": image_base64}
-    )
-    return response.json()
-
-# 使用例
-result = detect_fields("application_form.png")
-print(f"検出数: {result['count']}")
-for bbox in result['bboxes']:
-    print(f"  位置: {bbox['bbox_pixel']}")
-```
+| フィールド | 説明 |
+|-----------|------|
+| `bboxes` | 検出されたフィールドのリスト |
+| `bbox_normalized` | 0-1000正規化座標 |
+| `bbox_pixel` | ピクセル座標 |
+| `count` | 検出数 |
+| `raw_output` | モデルの生出力 |
+| `image_size` | 入力画像サイズ |
 
 ---
 
@@ -201,83 +290,89 @@ for bbox in result['bboxes']:
 ### 32Bモデルを使う場合
 
 ```bash
-docker run -d \
-  --gpus all \
-  -p 8000:8000 \
-  -e BASE_MODEL=Qwen/Qwen3-VL-32B-Instruct \
-  -e LORA_ADAPTER=takumi123xxx/pdfme-form-field-detector-lora-32b \
-  -e USE_4BIT=true \
-  pdfme-api:latest
+export BASE_MODEL=Qwen/Qwen3-VL-32B-Instruct
+export LORA_ADAPTER=takumi123xxx/pdfme-form-field-detector-lora-32b
 ```
 
-⚠️ 32Bモデルには**40GB以上のVRAM**が必要です（A100推奨）
+⚠️ 32Bモデルには**40GB以上のVRAM**が必要です
 
 ---
 
-## コスト最適化
+## コスト比較
 
-### スポット/プリエンプティブインスタンス
+### 月額コスト目安（24時間稼働）
 
-| クラウド | 通常料金 | スポット料金 | 割引率 |
-|----------|---------|-------------|--------|
-| AWS Spot | $1.00/h | ~$0.30/h | 70% |
-| GCP Preemptible | $0.80/h | ~$0.24/h | 70% |
-| Azure Spot | $0.90/h | ~$0.27/h | 70% |
+| サービス | インスタンス | 月額 |
+|----------|-------------|------|
+| AWS SageMaker | ml.g5.xlarge | ~$864 |
+| GCP Vertex AI | n1-standard-8 + L4 | ~$864 |
+| Azure AI Foundry | Standard_NC4as_T4_v3 | ~$792 |
 
-### 自動停止
+### 最小構成（オンデマンド）
 
-使用していないときにインスタンスを停止することで、コストを大幅に削減できます。
-
-```bash
-# AWS
-aws ec2 stop-instances --instance-ids i-xxxxxxxx
-
-# GCP
-gcloud compute instances stop pdfme-form-detector-api
-
-# Azure
-az vm deallocate --resource-group pdfme-form-detector-rg --name pdfme-form-detector-vm
-```
+| サービス | 設定 | 月額（1日2時間） |
+|----------|------|-----------------|
+| AWS SageMaker | Serverless | ~$72 |
+| GCP Vertex AI | 自動スケーリング | ~$72 |
+| Azure AI Foundry | 最小インスタンス | ~$66 |
 
 ---
 
 ## トラブルシューティング
 
-### GPUが認識されない
+### モデルロードエラー
 
-```bash
-# NVIDIAドライバー確認
-nvidia-smi
-
-# Docker内でGPU確認
-docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+```
+ValueError: The checkpoint you are trying to load has model type `qwen3_vl`...
 ```
 
-### モデルロードが遅い
+**原因**: transformersバージョンが古い
 
-- 初回起動時はモデルダウンロードに10-15分かかります
-- 2回目以降はキャッシュされるため高速です
+**解決策**: requirements.txtでGitHubソースからインストール
+```
+transformers @ git+https://github.com/huggingface/transformers.git
+```
 
 ### OOMエラー
 
-- `USE_4BIT=true` を確認
-- より大きなVRAMのインスタンスを選択
-- 8Bモデルの場合、最低16GB VRAMが必要
+```
+CUDA out of memory
+```
+
+**原因**: VRAMが不足
+
+**解決策**:
+1. `USE_4BIT=true` を確認
+2. より大きなインスタンスを選択
+3. 8Bモデルの場合、最低16GB VRAMが必要
+
+### タイムアウトエラー
+
+**原因**: モデルロードに時間がかかる
+
+**解決策**:
+- SageMaker: `model_data_download_timeout` を延長
+- Vertex AI: `deploy_timeout` を延長
+- Azure: ヘルスチェック間隔を延長
 
 ---
 
-## セキュリティ
+## ファイル構成
 
-### 本番環境での推奨事項
-
-1. **認証**: API Gatewayやnginxで認証を追加
-2. **HTTPS**: Let's Encryptで証明書を取得
-3. **ファイアウォール**: 信頼できるIPのみ許可
-4. **VPC**: プライベートサブネットでの運用
-
-```bash
-# nginx + Let's Encrypt例
-sudo apt install nginx certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
 ```
-
+deploy/
+├── Dockerfile              # 共通Dockerイメージ
+├── api_server.py           # FastAPI サーバー
+├── README.md               # このファイル
+├── aws-sagemaker/
+│   ├── deploy.py           # デプロイスクリプト
+│   └── code/
+│       └── inference.py    # SageMaker推論スクリプト
+├── gcp-vertex/
+│   └── deploy.py           # デプロイスクリプト
+└── azure-foundry/
+    ├── deploy.py           # デプロイスクリプト
+    ├── conda.yml           # 環境定義
+    └── code/
+        └── score.py        # Azure MLスコアリングスクリプト
+```
