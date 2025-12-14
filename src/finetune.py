@@ -104,8 +104,8 @@ class FormFieldDataCollator:
             messages = [
                 {"role": "system", "content": item["system_prompt"]},
                 {"role": "user", "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": item["user_prompt"]},
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": item["user_prompt"]},
                 ]},
                 {"role": "assistant", "content": item["answer"]},
             ]
@@ -166,9 +166,9 @@ def main():
         ds = {"train": ds_raw}
         print(f"拡張データ数: {len(ds_raw)}件")
     else:
-        print("\nデータセットをダウンロード中...")
-        ds = load_dataset("hand-dot/pdfme-form-field-dataset")
-        print(f"データ数: {len(ds['train'])}件")
+    print("\nデータセットをダウンロード中...")
+    ds = load_dataset("hand-dot/pdfme-form-field-dataset")
+    print(f"データ数: {len(ds['train'])}件")
     
     # データ準備
     print("\nデータを準備中...")

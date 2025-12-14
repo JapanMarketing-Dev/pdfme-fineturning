@@ -212,11 +212,11 @@ print(result)
 
 ```json
 {
-  "applicant_fields": [
+    "applicant_fields": [
     {"bbox": [100, 200, 500, 250]},
     {"bbox": [100, 300, 500, 350]}
-  ],
-  "count": 2
+    ],
+    "count": 2
 }
 ```
 

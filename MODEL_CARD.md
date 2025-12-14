@@ -161,24 +161,80 @@ print(result)
 Try the model on Hugging Face Spaces:
 [takumi123xxx/pdfme-form-field-detector](https://huggingface.co/spaces/takumi123xxx/pdfme-form-field-detector)
 
-## Deployment (Inference Endpoints)
+## Cloud Deployment
 
-### ⚠️ Important: Instance Selection
+### AWS SageMaker
 
-This model is a **32B parameter** Vision-Language Model. Please note the following when deploying:
+```python
+import boto3
+import json
+import base64
 
-| Condition | Recommended Instance | VRAM | Notes |
-|-----------|---------------------|------|-------|
-| **With 4-bit quantization** | `nvidia-a100` | 40GB+ | ⭐ Recommended |
-| **Without 4-bit quantization** | `nvidia-a100-80g` | 80GB | Requires more VRAM |
+runtime = boto3.client("sagemaker-runtime", region_name="ap-northeast-1")
 
-### Environment Variables
+with open("document.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BASE_MODEL` | `Qwen/Qwen3-VL-32B-Instruct` | Base model |
-| `USE_LORA` | `true` | Use LoRA adapter |
-| `USE_4BIT` | `true` | Use 4-bit quantization (recommended) |
+response = runtime.invoke_endpoint(
+    EndpointName="pdfme-form-detector-xxxxx",
+    ContentType="application/json",
+    Body=json.dumps({"inputs": image_base64})
+)
+
+result = json.loads(response["Body"].read().decode())
+print(result)
+```
+
+### GCP Vertex AI
+
+```python
+from google.cloud import aiplatform
+import base64
+
+aiplatform.init(project="your-project-id", location="asia-northeast1")
+endpoint = aiplatform.Endpoint("projects/xxx/locations/xxx/endpoints/xxx")
+
+with open("document.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+response = endpoint.predict(instances=[{"image_base64": image_base64}])
+print(response.predictions)
+```
+
+### Azure AI Foundry
+
+```python
+import requests
+import base64
+
+endpoint_url = "https://pdfme-detector-xxxxx.japaneast.inference.ml.azure.com/score"
+api_key = "your-api-key"
+
+with open("document.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+headers = {
+    "Authorization": f"Bearer {api_key}",
+    "Content-Type": "application/json",
+}
+
+response = requests.post(
+    endpoint_url,
+    headers=headers,
+    json={"image_base64": image_base64}
+)
+print(response.json())
+```
+
+### Recommended Instances
+
+| Service | Instance | GPU | VRAM | Cost/hour |
+|---------|----------|-----|------|-----------|
+| **AWS SageMaker** | ml.g5.xlarge | A10G | 24GB | ~$1.20 |
+| **GCP Vertex AI** | n1-standard-8 + L4 | L4 | 24GB | ~$1.20 |
+| **Azure AI Foundry** | Standard_NC4as_T4_v3 | T4 | 16GB | ~$1.10 |
+
+For detailed deployment instructions, see the [GitHub repository](https://github.com/JapanMarketing-Dev/pdfme-fineturning/tree/main/deploy).
 
 ## Training Details
 
@@ -279,6 +335,18 @@ Apache 2.0
 
 Hugging Face Spacesでお試しください：
 [takumi123xxx/pdfme-form-field-detector](https://huggingface.co/spaces/takumi123xxx/pdfme-form-field-detector)
+
+## クラウドデプロイ
+
+### 推奨インスタンス
+
+| サービス | インスタンス | GPU | VRAM | 料金/時間 |
+|----------|-------------|-----|------|----------|
+| **AWS SageMaker** | ml.g5.xlarge | A10G | 24GB | ~$1.20 |
+| **GCP Vertex AI** | n1-standard-8 + L4 | L4 | 24GB | ~$1.20 |
+| **Azure AI Foundry** | Standard_NC4as_T4_v3 | T4 | 16GB | ~$1.10 |
+
+詳細なデプロイ手順は[GitHubリポジトリ](https://github.com/JapanMarketing-Dev/pdfme-fineturning/tree/main/deploy)を参照してください。
 
 ## 学習詳細
 
